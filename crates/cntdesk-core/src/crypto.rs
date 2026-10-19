@@ -39,6 +39,25 @@ impl KeyPair {
     pub fn public_key_bytes(&self) -> Vec<u8> {
         self.signing_key.verifying_key().as_bytes().to_vec()
     }
+
+    /// Return the secret (private) key as raw bytes (32 bytes)
+    pub fn secret_bytes(&self) -> Vec<u8> {
+        self.signing_key.to_bytes().to_vec()
+    }
+
+    /// Reconstruct a KeyPair from raw secret key bytes (32 bytes)
+    pub fn from_secret_bytes(bytes: &[u8]) -> Result<Self, CoreError> {
+        if bytes.len() != 32 {
+            return Err(CoreError::Crypto(format!(
+                "Invalid secret key length: expected 32, got {}",
+                bytes.len()
+            )));
+        }
+        let mut key_bytes = [0u8; 32];
+        key_bytes.copy_from_slice(bytes);
+        let signing_key = SigningKey::from_bytes(&key_bytes);
+        Ok(Self { signing_key })
+    }
 }
 
 /// Session token with expiration

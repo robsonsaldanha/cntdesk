@@ -1,0 +1,168 @@
+//! Client connection manager with retry logic and session management.
+
+use std::time::Duration;
+
+use anyhow::{Context, Result};
+use cntdesk_core::crypto::KeyPair;
+use cntdesk_core::protocol::Message;
+use cntdesk_core::transport::{Connection, TlsConfig, Transport};
+use tokio::time::sleep;
+
+use crate::auth::ClientAuth;
+
+/// Typed wrapper for a viewer (peer) session.
+pub struct PeerSession {
+    conn: Connection,
+}
+
+impl PeerSession {
+    pub fn new(conn: Connection) -> Self {
+        Self { conn }
+    }
+
+    pub async fn send(&mut self, msg: &Message) -> Result<()> {
+        self.conn.send(msg).await.map_err(|e| anyhow::anyhow!("{}", e))
+    }
+
+    pub async fn recv(&mut self) -> Result<Message> {
+        self.conn.recv().await.map_err(|e| anyhow::anyhow!("{}", e))
+    }
+}
+
+/// Typed wrapper for a host session.
+pub struct HostSession {
+    conn: Connection,
+}
+
+impl HostSession {
+    pub fn new(conn: Connection) -> Self {
+        Self { conn }
+    }
+
+    pub async fn send(&mut self, msg: &Message) -> Result<()> {
+        self.conn.send(msg).await.map_err(|e| anyhow::anyhow!("{}", e))
+    }
+
+    pub async fn recv(&mut self) -> Result<Message> {
+        self.conn.recv().await.map_err(|e| anyhow::anyhow!("{}", e))
+    }
+}
+
+/// Manages client connections to the CNT Desk server and peers.
+pub struct ConnectionManager {
+    transport: Transport,
+    auth: ClientAuth,
+    server_addr: String,
+}
+
+impl ConnectionManager {
+    /// Create a new ConnectionManager.
+    pub fn new(server_addr: &str, auth: ClientAuth) -> Result<Self> {
+        // Phase 0: use placeholder TLS config for client binding.
+        // Real TLS certs come from server; client uses self-signed for outbound.
+        let tls_config = TlsConfig {
+            server_cert: vec![],
+            server_key: vec![],
+            client_ca: None,
+        };
+        let transport = Transport::bind("0.0.0.0:0", &tls_config)
+            .context("Failed to bind QUIC transport")?;
+        Ok(Self {
+            transport,
+            auth,
+            server_addr: server_addr.to_string(),
+        })
+    }
+
+    /// Register this client with the server, returning the assigned device ID.
+    pub async fn register_with_server(&self) -> Result<String> {
+        let keypair = self.auth.ensure_identity()?;
+        let mut conn = self.connect_with_retry(&self.server_addr).await?;
+
+        let msg = Message::AuthRequest {
+            id: String::new(), // empty = new registration
+            password_hash: keypair.public_key_bytes(),
+        };
+        conn.send(&msg).await.context("Failed to send registration request")?;
+
+        match conn.recv().await.context("Failed to receive registration response")? {
+            Message::AuthResponse { success: true, session_token: Some(token) } => {
+                // Token contains the assigned ID as UTF-8 bytes for phase 0
+                let id = String::from_utf8(token)
+                    .context("Invalid ID in server response")?;
+                Ok(id)
+            }
+            Message::AuthResponse { success: false, .. } => {
+                anyhow::bail!("Server rejected registration")
+            }
+            other => {
+                anyhow::bail!("Unexpected message during registration: {:?}", other)
+            }
+        }
+    }
+
+    /// Connect to a remote peer as a viewer.
+    pub async fn connect_to_peer(&self, id: &str, password: &str) -> Result<PeerSession> {
+        let mut conn = self.connect_with_retry(&self.server_addr).await?;
+
+        let msg = Message::AuthRequest {
+            id: id.to_string(),
+            password_hash: password.as_bytes().to_vec(),
+        };
+        conn.send(&msg).await.context("Failed to send auth request")?;
+
+        match conn.recv().await.context("Failed to receive auth response")? {
+            Message::AuthResponse { success: true, .. } => {
+                Ok(PeerSession::new(conn))
+            }
+            Message::AuthResponse { success: false, .. } => {
+                anyhow::bail!("Authentication failed for peer {}", id)
+            }
+            other => {
+                anyhow::bail!("Unexpected message during peer auth: {:?}", other)
+            }
+        }
+    }
+
+    /// Start hosting a session (wait for incoming viewer connection).
+    pub async fn host_session(&self) -> Result<HostSession> {
+        let conn = self.transport.accept().await
+            .context("Failed to accept incoming connection")?;
+        Ok(HostSession::new(conn))
+    }
+
+    /// Connect with exponential backoff retry (max 30s).
+    async fn connect_with_retry(&self, addr: &str) -> Result<Connection> {
+        let mut delay = Duration::from_millis(500);
+        let max_delay = Duration::from_secs(30);
+        let max_attempts = 10;
+
+        // Phase 0: placeholder TLS config for outbound connections.
+        let tls_config = TlsConfig {
+            server_cert: vec![],
+            server_key: vec![],
+            client_ca: None,
+        };
+
+        for attempt in 1..=max_attempts {
+            match self.transport.connect(addr, &tls_config).await {
+                Ok(conn) => return Ok(conn),
+                Err(e) => {
+                    tracing::warn!(
+                        "Connection attempt {}/{} to {} failed: {}. Retrying in {:?}",
+                        attempt, max_attempts, addr, e, delay
+                    );
+                    if attempt == max_attempts {
+                        anyhow::bail!(
+                            "Failed to connect to {} after {} attempts: {}",
+                            addr, max_attempts, e
+                        );
+                    }
+                    sleep(delay).await;
+                    delay = std::cmp::min(delay * 2, max_delay);
+                }
+            }
+        }
+        unreachable!()
+    }
+}
