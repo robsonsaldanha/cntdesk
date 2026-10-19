@@ -1,3 +1,8 @@
-//! cntdesk-server - CNT Desk relay and authentication server
+pub mod auth;
+pub mod config;
+pub mod db;
+pub mod idgen;
 
-fn main() {}
+fn main() {
+    println!("CNT Desk Server");
+}

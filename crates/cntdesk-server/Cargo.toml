@@ -13,3 +13,8 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 rusqlite = { version = "0.31", features = ["bundled"] }
 thiserror = { workspace = true }
+rand = { workspace = true }
+ed25519-dalek = { workspace = true }
+
+[dev-dependencies]
+regex = "1"
