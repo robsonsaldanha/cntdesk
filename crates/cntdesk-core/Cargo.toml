@@ -9,3 +9,8 @@ bincode = { workspace = true }
 thiserror = { workspace = true }
 ed25519-dalek = { workspace = true }
 rand = { workspace = true }
+quinn = { workspace = true }
+tokio = { workspace = true }
+rustls = { version = "0.23", features = ["ring"] }
+tracing = { workspace = true }
+rcgen = "0.13"
