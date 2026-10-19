@@ -1,0 +1,1 @@
+//! cntdesk-core - Core protocol types, crypto, and error handling for CNT Desk

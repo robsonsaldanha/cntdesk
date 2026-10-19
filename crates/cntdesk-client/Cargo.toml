@@ -1,0 +1,13 @@
+[package]
+name = "cntdesk-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cntdesk-core = { path = "../cntdesk-core" }
+cntdesk-capture = { path = "../cntdesk-capture" }
+tokio = { workspace = true }
+quinn = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }

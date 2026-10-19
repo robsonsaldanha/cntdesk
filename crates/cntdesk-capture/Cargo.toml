@@ -1,0 +1,9 @@
+[package]
+name = "cntdesk-capture"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cntdesk-core = { path = "../cntdesk-core" }
+tracing = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cntdesk-core",
+    "crates/cntdesk-client",
+    "crates/cntdesk-server",
+    "crates/cntdesk-capture",
+]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+quinn = "0.11"
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+thiserror = "1"
+anyhow = "1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+argon2 = "0.5"
+rand = "0.8"

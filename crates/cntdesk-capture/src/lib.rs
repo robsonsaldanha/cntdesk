@@ -1,0 +1,1 @@
+//! cntdesk-capture - Platform-specific screen capture for CNT Desk
