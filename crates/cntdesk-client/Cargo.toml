@@ -12,6 +12,12 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 tempfile = "3"
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+dirs = "5"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
 [dev-dependencies]
 tempfile = "3"

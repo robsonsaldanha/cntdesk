@@ -1,0 +1,21 @@
+{
+  "productName": "CNT Desk",
+  "identifier": "com.cntdesk.app",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "/var/www/html_cntdesk/ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "CNT Desk",
+        "width": 1280,
+        "height": 720,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    }
+  }
+}
