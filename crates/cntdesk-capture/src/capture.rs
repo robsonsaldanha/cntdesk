@@ -1,6 +1,7 @@
 //! Screen capture abstraction layer.
 
 use cntdesk_core::error::CoreError;
+pub use cntdesk_core::frame::{CapturedFrame, PixelFormat};
 
 /// Capture configuration.
 #[derive(Debug, Clone)]
@@ -18,23 +19,6 @@ impl Default for CaptureConfig {
             max_height: 1080,
         }
     }
-}
-
-/// Pixel format of captured frames.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PixelFormat {
-    Bgra,
-    Rgba,
-}
-
-/// A single captured screen frame.
-#[derive(Debug, Clone)]
-pub struct CapturedFrame {
-    pub data: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-    pub format: PixelFormat,
-    pub timestamp_us: u64,
 }
 
 /// Platform-specific screen capture backend.

@@ -3,4 +3,6 @@
 pub mod protocol;
 pub mod crypto;
 pub mod error;
+pub mod frame;
 pub mod transport;
+pub mod encoder;

@@ -3,4 +3,6 @@
 pub mod capture;
 mod platform;
 
-pub use capture::{CapturedFrame, CaptureConfig, PixelFormat, ScreenCaptureBackend};
+// Re-export frame types from core for backwards compatibility
+pub use cntdesk_core::frame::{CapturedFrame, PixelFormat};
+pub use capture::{CaptureConfig, ScreenCaptureBackend, create_backend};
