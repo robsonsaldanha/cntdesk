@@ -9,6 +9,7 @@ use cntdesk_core::transport::{Connection, TlsConfig, Transport};
 use tokio::time::sleep;
 
 use crate::auth::ClientAuth;
+use crate::commands::ConnectionState;
 
 /// Typed wrapper for a viewer (peer) session.
 pub struct PeerSession {
@@ -50,9 +51,12 @@ impl HostSession {
 
 /// Manages client connections to the CNT Desk server and peers.
 pub struct ConnectionManager {
-    transport: Transport,
+    transport: Option<Transport>,
     auth: ClientAuth,
     server_addr: String,
+    device_id: Option<String>,
+    state: ConnectionState,
+    active_session: Option<PeerSession>,
 }
 
 impl ConnectionManager {
@@ -67,15 +71,49 @@ impl ConnectionManager {
         };
         let transport = Transport::bind("0.0.0.0:0", &tls_config)
             .context("Failed to bind QUIC transport")?;
+        let device_id = auth.load_device_id();
         Ok(Self {
-            transport,
+            transport: Some(transport),
             auth,
             server_addr: server_addr.to_string(),
+            device_id,
+            state: ConnectionState::Disconnected,
+            active_session: None,
         })
     }
 
+    /// Create a ConnectionManager for testing without requiring valid TLS certificates.
+    /// Transport is None; calling connect/accept methods will return an error.
+    /// Suitable for state-tracking and device-ID persistence tests only.
+    pub fn new_test(server_addr: &str, auth: ClientAuth) -> Self {
+        let device_id = auth.load_device_id();
+        Self {
+            transport: None,
+            auth,
+            server_addr: server_addr.to_string(),
+            device_id,
+            state: ConnectionState::Disconnected,
+            active_session: None,
+        }
+    }
+
+    /// Get the persisted device ID, if any.
+    pub fn device_id(&self) -> Option<&str> {
+        self.device_id.as_deref()
+    }
+
+    /// Get the current connection state.
+    pub fn state(&self) -> &ConnectionState {
+        &self.state
+    }
+
+    /// Get mutable access to the active peer session, if connected.
+    pub fn active_session(&mut self) -> Option<&mut PeerSession> {
+        self.active_session.as_mut()
+    }
+
     /// Register this client with the server, returning the assigned device ID.
-    pub async fn register_with_server(&self) -> Result<String> {
+    pub async fn register_with_server(&mut self) -> Result<String> {
         let keypair = self.auth.ensure_identity()?;
         let mut conn = self.connect_with_retry(&self.server_addr).await?;
 
@@ -90,6 +128,9 @@ impl ConnectionManager {
                 // Token contains the assigned ID as UTF-8 bytes for phase 0
                 let id = String::from_utf8(token)
                     .context("Invalid ID in server response")?;
+                // Persist device ID and update state
+                self.auth.save_device_id(&id).context("Failed to persist device ID")?;
+                self.device_id = Some(id.clone());
                 Ok(id)
             }
             Message::AuthResponse { success: false, .. } => {
@@ -102,7 +143,8 @@ impl ConnectionManager {
     }
 
     /// Connect to a remote peer as a viewer.
-    pub async fn connect_to_peer(&self, id: &str, password: &str) -> Result<PeerSession> {
+    pub async fn connect_to_peer(&mut self, id: &str, password: &str) -> Result<()> {
+        self.state = ConnectionState::Connecting;
         let mut conn = self.connect_with_retry(&self.server_addr).await?;
 
         let msg = Message::AuthRequest {
@@ -113,26 +155,44 @@ impl ConnectionManager {
 
         match conn.recv().await.context("Failed to receive auth response")? {
             Message::AuthResponse { success: true, .. } => {
-                Ok(PeerSession::new(conn))
+                self.active_session = Some(PeerSession::new(conn));
+                self.state = ConnectionState::Connected { remote_id: id.to_string() };
+                Ok(())
             }
             Message::AuthResponse { success: false, .. } => {
+                self.state = ConnectionState::Disconnected;
                 anyhow::bail!("Authentication failed for peer {}", id)
             }
             other => {
+                self.state = ConnectionState::Disconnected;
                 anyhow::bail!("Unexpected message during peer auth: {:?}", other)
             }
         }
     }
 
+    /// Disconnect from the current peer session.
+    pub async fn disconnect(&mut self) -> Result<()> {
+        if let Some(mut session) = self.active_session.take() {
+            let msg = Message::Disconnect { reason: "user_requested".to_string() };
+            let _ = session.send(&msg).await;
+        }
+        self.state = ConnectionState::Disconnected;
+        Ok(())
+    }
+
     /// Start hosting a session (wait for incoming viewer connection).
     pub async fn host_session(&self) -> Result<HostSession> {
-        let conn = self.transport.accept().await
+        let transport = self.transport.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Transport not available (test mode)"))?;
+        let conn = transport.accept().await
             .context("Failed to accept incoming connection")?;
         Ok(HostSession::new(conn))
     }
 
     /// Connect with exponential backoff retry (max 30s).
     async fn connect_with_retry(&self, addr: &str) -> Result<Connection> {
+        let transport = self.transport.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Transport not available (test mode)"))?;
         let mut delay = Duration::from_millis(500);
         let max_delay = Duration::from_secs(30);
         let max_attempts = 10;
@@ -145,7 +205,7 @@ impl ConnectionManager {
         };
 
         for attempt in 1..=max_attempts {
-            match self.transport.connect(addr, &tls_config).await {
+            match transport.connect(addr, &tls_config).await {
                 Ok(conn) => return Ok(conn),
                 Err(e) => {
                     tracing::warn!(

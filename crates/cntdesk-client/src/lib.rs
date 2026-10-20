@@ -1,3 +1,4 @@
-//! cntdesk-client library — exposes auth and connection modules for testing.
+//! cntdesk-client library — exposes auth, connection, and commands modules for testing.
 pub mod auth;
+pub mod commands;
 pub mod connection;

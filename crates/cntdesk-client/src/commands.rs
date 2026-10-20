@@ -16,7 +16,7 @@ pub struct AppState {
 }
 
 /// Connection state exposed to frontend.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum ConnectionState {
     Disconnected,
     Connecting,
@@ -56,13 +56,10 @@ pub async fn connect(
     password: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let cm = state.connection_manager.lock().await;
-    // connect_to_peer returns PeerSession but we just verify it works
-    let _session = cm
-        .connect_to_peer(&remote_id, &password)
+    let mut cm = state.connection_manager.lock().await;
+    cm.connect_to_peer(&remote_id, &password)
         .await
         .map_err(|e| e.to_string())?;
-    // TODO: store session for later use (send_input, disconnect)
     Ok(())
 }
 

@@ -67,6 +67,28 @@ impl ClientAuth {
     fn identity_path(&self) -> PathBuf {
         self.config_dir.join("identity.key")
     }
+
+    /// Persist device ID to disk with 0600 permissions.
+    pub fn save_device_id(&self, id: &str) -> Result<()> {
+        let path = self.device_id_path();
+        fs::write(&path, id.as_bytes()).context("Failed to write device ID")?;
+        #[cfg(unix)]
+        {
+            let perms = fs::Permissions::from_mode(0o600);
+            fs::set_permissions(&path, perms).context("Failed to set device ID permissions")?;
+        }
+        Ok(())
+    }
+
+    /// Load persisted device ID from disk, returning None if not present.
+    pub fn load_device_id(&self) -> Option<String> {
+        let path = self.device_id_path();
+        fs::read_to_string(&path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    }
+
+    fn device_id_path(&self) -> PathBuf {
+        self.config_dir.join("device_id")
+    }
 }
 
 #[cfg(test)]
