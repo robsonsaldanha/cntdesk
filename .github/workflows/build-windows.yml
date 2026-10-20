@@ -27,11 +27,16 @@ jobs:
       - name: Build Windows installer
         working-directory: crates/cntdesk-client
         run: cargo tauri build --target x86_64-pc-windows-msvc --bundles msi,nsis
-      - name: Upload installer artifacts
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release with installers
+        uses: softprops/action-gh-release@v2
         with:
-          name: cntdesk-windows-installer
-          path: |
+          tag_name: v${{ github.run_number }}
+          name: CNT Desk Build ${{ github.run_number }}
+          files: |
             target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
             target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-          retention-days: 30
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
