@@ -25,6 +25,8 @@ struct SessionState {
 /// Signaling service managing active sessions behind RwLock.
 pub struct SignalingService {
     sessions: Arc<RwLock<HashMap<String, SessionState>>>,
+    /// Peers waiting to be paired (device_id -> timestamp registered).
+    waiting_peers: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl SignalingService {
@@ -32,6 +34,7 @@ impl SignalingService {
     pub fn new() -> Self {
         let svc = Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            waiting_peers: Arc::new(RwLock::new(HashMap::new())),
         };
         // Spawn background cleanup task for expired sessions
         let sessions = svc.sessions.clone();
@@ -48,6 +51,49 @@ impl SignalingService {
     pub fn new_test() -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            waiting_peers: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Register a peer as waiting to be paired.
+    pub async fn register_waiting_peer(&self, device_id: &str) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mut peers = self.waiting_peers.write().await;
+        peers.insert(device_id.to_string(), now);
+        info!(device_id = %device_id, "Peer registered as waiting");
+    }
+
+    /// Check if a peer is currently waiting to be paired.
+    pub async fn has_waiting_peer(&self, device_id: &str) -> bool {
+        let peers = self.waiting_peers.read().await;
+        peers.contains_key(device_id)
+    }
+
+    /// Try to pair a newly arrived peer with an existing waiting peer.
+    /// Returns Some(session_id) if pairing succeeded, None if no waiting peer available.
+    /// On success, removes the waiting peer and creates a session.
+    pub async fn pair_with_waiting(&self, new_peer_id: &str) -> Option<String> {
+        let mut peers = self.waiting_peers.write().await;
+        // Find first waiting peer that isn't ourselves
+        let waiting_id = peers.keys()
+            .find(|id| id.as_str() != new_peer_id)
+            .cloned()?;
+        peers.remove(&waiting_id);
+        drop(peers);
+
+        // Create session between the two peers
+        match self.create_session(&waiting_id, new_peer_id).await {
+            Ok(session_id) => {
+                info!(session_id = %session_id, "Peers paired successfully");
+                Some(session_id)
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to create session during pairing");
+                None
+            }
         }
     }
 

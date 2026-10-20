@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info, warn};
 
+use cntdesk_core::crypto::KeyPair;
 use cntdesk_core::protocol::Message;
 use cntdesk_core::transport::{Connection, Transport};
 
@@ -18,6 +19,7 @@ pub struct RelayService {
     transport: Arc<Transport>,
     auth: Arc<AuthService>,
     signaling: Arc<SignalingService>,
+    server_keypair: Arc<KeyPair>,
 }
 
 impl RelayService {
@@ -26,11 +28,13 @@ impl RelayService {
         transport: Transport,
         auth: AuthService,
         signaling: SignalingService,
+        server_keypair: KeyPair,
     ) -> Self {
         Self {
             transport: Arc::new(transport),
             auth: Arc::new(auth),
             signaling: Arc::new(signaling),
+            server_keypair: Arc::new(server_keypair),
         }
     }
 
@@ -62,8 +66,9 @@ impl RelayService {
                     Ok(conn) => {
                         let auth = self.auth.clone();
                         let signaling = self.signaling.clone();
+                        let server_kp = self.server_keypair.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = Self::handle_connection(conn, &auth, &signaling).await {
+                            if let Err(e) = Self::handle_connection(conn, &auth, &signaling, &server_kp).await {
                                 warn!(error = %e, "Connection handling failed");
                             }
                         });
@@ -95,6 +100,7 @@ impl RelayService {
         mut conn: Connection,
         auth: &AuthService,
         signaling: &SignalingService,
+        server_keypair: &KeyPair,
     ) -> Result<(), String> {
         // Wait for AuthRequest
         let msg = conn.recv().await.map_err(|e| format!("recv auth request failed: {}", e))?;
@@ -137,25 +143,40 @@ impl RelayService {
             }
         }
 
-        // Authentication successful — send response
+        // Authentication successful — generate real session token
+        let session_token = auth.create_session_token(&device_id, server_keypair)
+            .map_err(|e| format!("Failed to create session token: {}", e))?;
+
         let resp = Message::AuthResponse {
             success: true,
-            session_token: Some(vec![0u8; 32]), // Placeholder token for phase 0
+            session_token: Some(session_token),
         };
         conn.send(&resp)
             .await
             .map_err(|e| format!("send auth response failed: {}", e))?;
 
-        info!(device_id = %device_id, "Device authenticated");
+        info!(device_id = %device_id, "Device authenticated with real session token");
+
+        // Try to pair with a waiting peer; if none, register as waiting
+        let session_id = if let Some(sid) = signaling.pair_with_waiting(&device_id).await {
+            info!(device_id = %device_id, session_id = %sid, "Paired with waiting peer");
+            sid
+        } else {
+            signaling.register_waiting_peer(&device_id).await;
+            info!(device_id = %device_id, "Registered as waiting peer");
+            // Use device_id as placeholder session until paired
+            device_id.clone()
+        };
 
         // Enter relay forwarding loop
-        Self::forward_loop(conn, &device_id, signaling).await
+        Self::forward_loop(conn, &device_id, &session_id, signaling).await
     }
 
-    /// Forward messages bidirectionally through signaling or direct relay.
+    /// Forward messages bidirectionally through signaling.
     async fn forward_loop(
         mut conn: Connection,
         device_id: &str,
+        session_id: &str,
         signaling: &SignalingService,
     ) -> Result<(), String> {
         loop {
@@ -166,19 +187,20 @@ impl RelayService {
                             info!(device_id = %device_id, reason = %reason, "Peer disconnected");
                             break;
                         }
-                        Message::IceCandidate { .. } => {
-                            // Route through signaling for ICE exchange
-                            // In phase 0, we just log it
-                            info!(device_id = %device_id, "ICE candidate received");
+                        Message::FrameData { .. } | Message::InputEvent(_) | Message::IceCandidate { .. } => {
+                            // Route frame data, input events, and ICE candidates to paired peer
+                            if let Err(e) = signaling.route_message(session_id, msg.clone()).await {
+                                warn!(device_id = %device_id, error = %e, "Failed to route message");
+                            }
                         }
                         _ => {
-                            // Forward other messages (frame data, input events)
-                            // In full implementation, these go to the paired peer
+                            // Other messages logged but not forwarded
+                            info!(device_id = %device_id, "Non-forwardable message received");
                         }
                     }
 
                     // Check for pending outbound messages from signaling
-                    let pending = signaling.get_pending_messages(device_id).await;
+                    let pending = signaling.get_pending_messages(session_id).await;
                     for out_msg in pending {
                         if let Err(e) = conn.send(&out_msg).await {
                             warn!(device_id = %device_id, error = %e, "Failed to send pending message");

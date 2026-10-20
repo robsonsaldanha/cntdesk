@@ -57,9 +57,13 @@ async fn main() -> anyhow::Result<()> {
     let transport = Transport::bind(&config.listen_addr, &tls_config)?;
     info!(addr = %config.listen_addr, "QUIC transport bound");
 
+    // Generate or load server keypair for session token signing
+    let server_keypair = cntdesk_core::crypto::KeyPair::generate();
+    info!("Server keypair generated for session token signing");
+
     // Create signaling and relay services
     let signaling = SignalingService::new();
-    let relay = RelayService::new(transport, auth, signaling);
+    let relay = RelayService::new(transport, auth, signaling, server_keypair);
 
     // Run relay (blocks until shutdown signal)
     relay.run().await?;
