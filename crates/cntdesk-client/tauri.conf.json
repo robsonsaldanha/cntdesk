@@ -1,9 +1,9 @@
 {
   "productName": "CNT Desk",
-  "identifier": "com.cntdesk.app",
+  "identifier": "com.cntdesk.desktop",
   "build": {
     "devUrl": "http://localhost:1420",
-    "frontendDist": "/var/www/html_cntdesk/ui/dist"
+    "frontendDist": "../../ui/dist"
   },
   "app": {
     "windows": [
