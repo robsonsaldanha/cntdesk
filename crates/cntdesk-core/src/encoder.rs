@@ -87,24 +87,20 @@ impl VideoEncoderBackend for StubEncoder {
 }
 
 /// Create an encoder backend. Tries hardware encoders in priority order
-/// (NVENC → AMF → VAAPI → VideoToolbox), falls back to software.
-/// Phase 0: returns stub encoder; real HW backends added later.
+/// (NVENC → AMF → VAAPI → VideoToolbox), falls back to x264 software.
 pub fn create_encoder(config: &EncoderConfig) -> Result<Box<dyn VideoEncoderBackend>, CoreError> {
     config.validate()?;
 
     tracing::info!(
-        "Creating encoder: {}x{} @ {}fps, {}kbps (phase 0 stub)",
+        "Creating encoder: {}x{} @ {}fps, {}kbps",
         config.width,
         config.height,
         config.fps,
         config.bitrate_kbps
     );
 
-    // Phase 0: stub encoder. Real HW encoder selection will be added when
-    // platform-specific FFI bindings are implemented.
-    Ok(Box::new(StubEncoder {
-        config: config.clone(),
-        seq: 0,
-        force_keyframe: true, // First frame should be keyframe
-    }))
+    // TODO(phase2): Try HW encoders first (NVENC → AMF → VAAPI → VideoToolbox)
+    // Fall back to x264 software encoder
+    crate::encoder_x264::X264Encoder::new(config)
+        .map(|e| Box::new(e) as Box<dyn VideoEncoderBackend>)
 }
