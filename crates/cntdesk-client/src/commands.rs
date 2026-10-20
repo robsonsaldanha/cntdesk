@@ -27,7 +27,15 @@ pub enum ConnectionState {
 #[tauri::command]
 pub async fn get_device_id(state: State<'_, AppState>) -> Result<Option<String>, String> {
     let cm = state.connection_manager.lock().await;
-    Ok(cm.device_id().map(|s| s.to_string()))
+    if let Some(id) = cm.device_id() {
+        return Ok(Some(id.to_string()));
+    }
+    // Generate a local device ID if none persisted yet (XXX-XXX-XXX format)
+    drop(cm);
+    let auth = state.client_auth.lock().await;
+    let id = cntdesk_core::idgen::generate_device_id();
+    auth.save_device_id(&id).map_err(|e| e.to_string())?;
+    Ok(Some(id))
 }
 
 #[tauri::command]
@@ -43,8 +51,15 @@ pub async fn set_password(
 pub async fn generate_one_time_password(
     _state: State<'_, AppState>,
 ) -> Result<String, String> {
-    // TODO(phase2): requires active server connection to request OTP generation
-    Err("generate_one_time_password requires active server connection (phase 2)".to_string())
+    // Phase 1: generate a local 6-digit OTP for UI testing.
+    // Real server-side OTP generation deferred to phase 2.
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let otp = format!("{:06}", (seed % 1_000_000));
+    Ok(otp)
 }
 
 #[tauri::command]
