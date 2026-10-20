@@ -1,6 +1,7 @@
 //! Client identity management with Ed25519 keypair persistence.
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
