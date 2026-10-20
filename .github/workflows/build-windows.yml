@@ -32,6 +32,6 @@ jobs:
         with:
           name: cntdesk-windows-installer
           path: |
-            crates/cntdesk-client/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-            crates/cntdesk-client/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           retention-days: 30
