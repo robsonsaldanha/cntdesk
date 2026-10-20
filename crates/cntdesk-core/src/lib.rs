@@ -7,3 +7,4 @@ pub mod frame;
 pub mod transport;
 pub mod encoder;
 pub mod encoder_x264;
+pub mod fragment;
