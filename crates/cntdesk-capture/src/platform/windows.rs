@@ -73,9 +73,9 @@ impl Default for DxgiCapture {
 
 impl ScreenCaptureBackend for DxgiCapture {
     fn start(&mut self, config: &crate::capture::CaptureConfig) -> Result<(), CoreError> {
-        if config.width > 0 && config.height > 0 {
-            self.width = config.width;
-            self.height = config.height;
+        if config.max_width > 0 && config.max_height > 0 {
+            self.width = config.max_width;
+            self.height = config.max_height;
         }
         self.running = true;
         self.frame_seq = 0;
