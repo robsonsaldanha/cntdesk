@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use cntdesk_core::protocol::InputEvent;
+use cntdesk_core::protocol::{InputEvent, Message};
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -26,10 +26,8 @@ pub enum ConnectionState {
 
 #[tauri::command]
 pub async fn get_device_id(state: State<'_, AppState>) -> Result<Option<String>, String> {
-    let _auth = state.client_auth.lock().await;
-    // ClientAuth doesn't store device_id yet; return None until registration
-    // Device ID comes from server via register_with_server()
-    Ok(None)
+    let cm = state.connection_manager.lock().await;
+    Ok(cm.device_id().map(|s| s.to_string()))
 }
 
 #[tauri::command]
@@ -37,17 +35,16 @@ pub async fn set_password(
     _password: String,
     _state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Phase 0: password management not yet implemented in ConnectionManager
-    // Will be added when server-side password verification is wired
-    Err("set_password not yet implemented".to_string())
+    // TODO(phase2): requires active server connection to send SetPassword RPC
+    Err("set_password requires active server connection (phase 2)".to_string())
 }
 
 #[tauri::command]
 pub async fn generate_one_time_password(
     _state: State<'_, AppState>,
 ) -> Result<String, String> {
-    // Phase 0: OTP generation not yet implemented in ConnectionManager
-    Err("generate_one_time_password not yet implemented".to_string())
+    // TODO(phase2): requires active server connection to request OTP generation
+    Err("generate_one_time_password requires active server connection (phase 2)".to_string())
 }
 
 #[tauri::command]
@@ -64,24 +61,32 @@ pub async fn connect(
 }
 
 #[tauri::command]
-pub async fn disconnect(_state: State<'_, AppState>) -> Result<(), String> {
-    // Phase 0: disconnect not yet implemented in ConnectionManager
-    Err("disconnect not yet implemented".to_string())
+pub async fn disconnect(state: State<'_, AppState>) -> Result<(), String> {
+    let mut cm = state.connection_manager.lock().await;
+    cm.disconnect()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn send_input(
-    _event: InputEvent,
-    _state: State<'_, AppState>,
+    event: InputEvent,
+    state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Phase 0: input forwarding not yet implemented
-    Err("send_input not yet implemented".to_string())
+    let mut cm = state.connection_manager.lock().await;
+    let session = cm.active_session()
+        .ok_or_else(|| "Not connected: no active session".to_string())?;
+    session.send(&Message::InputEvent(event))
+        .await
+        .map_err(|e| format!("Failed to send input event: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn get_connection_state(
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
 ) -> Result<ConnectionState, String> {
-    // Phase 0: no connection state tracking yet
-    Ok(ConnectionState::Disconnected)
+    let cm = state.connection_manager.lock().await;
+    Ok(cm.state().clone())
 }
