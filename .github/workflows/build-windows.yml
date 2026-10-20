@@ -26,7 +26,7 @@ jobs:
         run: cargo install tauri-cli --version "^2"
       - name: Build Windows installer
         working-directory: crates/cntdesk-client
-        run: cargo tauri build --target x86_64-pc-windows-msvc
+        run: cargo tauri build --target x86_64-pc-windows-msvc --bundles msi,nsis
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
