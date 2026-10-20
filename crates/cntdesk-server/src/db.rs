@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result as SqlResult};
+use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
 use std::sync::Mutex;
 
 #[derive(Debug, Clone)]
@@ -103,5 +103,26 @@ impl Database {
             params![id, token, expires_at],
         )?;
         Ok(())
+    }
+
+    /// Update only the expiry timestamp of an existing session token (for testing).
+    pub fn update_session_token_expiry(&self, id: &str, expires_at: u64) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE session_tokens SET expires_at = ?1 WHERE device_id = ?2",
+            params![expires_at, id],
+        )?;
+        Ok(())
+    }
+
+    /// Get the stored expiry timestamp for a device's session token.
+    pub fn get_session_token_expiry(&self, id: &str) -> anyhow::Result<Option<u64>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT expires_at FROM session_tokens WHERE device_id = ?1",
+            params![id],
+            |row| row.get(0),
+        ).optional()?;
+        Ok(result)
     }
 }

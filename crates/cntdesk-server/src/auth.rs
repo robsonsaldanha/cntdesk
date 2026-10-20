@@ -3,8 +3,10 @@ use crate::idgen::IdGenerator;
 use argon2::{Argon2, Algorithm, Version, Params, PasswordHasher, PasswordVerifier};
 use argon2::password_hash::{SaltString, rand_core::OsRng as ArgonOsRng};
 use cntdesk_core::crypto::KeyPair;
+use ed25519_dalek::Verifier;
 use rand::rngs::OsRng;
 use rand::Rng;
+use rusqlite::params;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct AuthService {
@@ -114,6 +116,82 @@ impl AuthService {
             .map_err(|e| format!("DB update error: {}", e))?;
 
         Ok(otp_str)
+    }
+
+    /// Verify a session token: check Ed25519 signature against stored public key and expiry.
+    /// Returns the device_id if valid.
+    pub fn verify_session_token(&self, token: &[u8]) -> Result<String, String> {
+        // Token format: payload (id + '|' + expires_at_le_bytes) + signature (64 bytes)
+        if token.len() < 64 {
+            return Err("Token too short".to_string());
+        }
+        let sig_start = token.len() - 64;
+        let payload = &token[..sig_start];
+        let signature = &token[sig_start..];
+
+        // Extract device_id from payload (everything before '|')
+        let separator = payload.iter().position(|&b| b == b'|')
+            .ok_or_else(|| "Invalid token format: missing separator".to_string())?;
+        let id = std::str::from_utf8(&payload[..separator])
+            .map_err(|e| format!("Invalid UTF-8 in token id: {}", e))?;
+
+        // Extract expires_at from payload (8 bytes after '|')
+        let expiry_start = separator + 1;
+        if payload.len() < expiry_start + 8 {
+            return Err("Token payload too short for expiry".to_string());
+        }
+        let mut expiry_bytes = [0u8; 8];
+        expiry_bytes.copy_from_slice(&payload[expiry_start..expiry_start + 8]);
+        let expires_at = u64::from_le_bytes(expiry_bytes);
+
+        // Check expiry with 60s clock skew tolerance
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if expires_at < now.saturating_sub(60) {
+            return Err("Session token expired".to_string());
+        }
+
+        // Retrieve device's public key from DB
+        let device = self.db.get_device(id)
+            .map_err(|e| format!("DB error: {}", e))?
+            .ok_or_else(|| format!("Device '{}' not found", id))?;
+
+        // Verify Ed25519 signature over payload using device's public key
+        // Verify Ed25519 signature over payload using device's stored public key (verifying key bytes).
+
+        // Direct verification using ed25519_dalek
+        if device.public_key.len() != 32 {
+            return Err("Invalid public key length in DB".to_string());
+        }
+        let mut pk_bytes = [0u8; 32];
+        pk_bytes.copy_from_slice(&device.public_key);
+        let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(&pk_bytes)
+            .map_err(|e| format!("Invalid public key: {}", e))?;
+
+        let mut sig_bytes = [0u8; 64];
+        sig_bytes.copy_from_slice(signature);
+        let sig = ed25519_dalek::Signature::from_bytes(&sig_bytes);
+
+        verifying_key.verify(payload, &sig)
+            .map_err(|_| "Signature verification failed".to_string())?;
+
+        // Also check DB-stored expiry (allows server-side revocation / test expiry manipulation)
+        if let Some(db_exp) = self.db.get_session_token_expiry(id)
+            .map_err(|e| format!("DB error checking expiry: {}", e))? {
+            if db_exp < now.saturating_sub(60) {
+                return Err("Session token expired (server-side)".to_string());
+            }
+        }
+
+        Ok(id.to_string())
+    }
+
+    /// Expire a session token for testing purposes.
+    pub fn expire_session_token_for_test(&self, id: &str, expires_at: u64) -> Result<(), String> {
+        self.db.update_session_token_expiry(id, expires_at)
+            .map_err(|e| format!("DB error: {}", e))
     }
 
     /// Create a signed session token for a device. Token expires in 24h.
