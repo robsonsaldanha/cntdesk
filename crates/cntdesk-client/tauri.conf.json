@@ -5,7 +5,14 @@
     "devUrl": "http://localhost:1420",
     "frontendDist": "../../ui/dist"
   },
-  "app": {
+  "bundle": {
+		"active": true,
+		"icon": [
+			"icons/icon.png",
+			"icons/icon.ico"
+		]
+	},
+	"app": {
     "windows": [
       {
         "title": "CNT Desk",
