@@ -61,19 +61,12 @@ pub struct ConnectionManager {
 
 impl ConnectionManager {
     /// Create a new ConnectionManager.
+    /// Transport is initialized lazily on first connect to avoid startup crash
+    /// from empty TLS config (client-only, no server cert needed at init).
     pub fn new(server_addr: &str, auth: ClientAuth) -> Result<Self> {
-        // Phase 0: use placeholder TLS config for client binding.
-        // Real TLS certs come from server; client uses self-signed for outbound.
-        let tls_config = TlsConfig {
-            server_cert: vec![],
-            server_key: vec![],
-            client_ca: None,
-        };
-        let transport = Transport::bind("0.0.0.0:0", &tls_config)
-            .context("Failed to bind QUIC transport")?;
         let device_id = auth.load_device_id();
         Ok(Self {
-            transport: Some(transport),
+            transport: None,
             auth,
             server_addr: server_addr.to_string(),
             device_id,
