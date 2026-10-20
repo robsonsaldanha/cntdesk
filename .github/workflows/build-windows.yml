@@ -25,12 +25,13 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
       - name: Build Windows installer
+        working-directory: crates/cntdesk-client
         run: cargo tauri build --target x86_64-pc-windows-msvc
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cntdesk-windows-installer
           path: |
-            crates/cntdesk-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-            crates/cntdesk-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            crates/cntdesk-client/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            crates/cntdesk-client/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
           retention-days: 30
