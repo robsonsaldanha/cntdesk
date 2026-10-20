@@ -44,6 +44,11 @@ pub enum Message {
         height: u16,
         keyframe: bool,
     },
+    FrameData {
+        seq: u64,
+        data: Vec<u8>,
+        is_keyframe: bool,
+    },
     InputEvent(InputEvent),
     Disconnect {
         reason: String,

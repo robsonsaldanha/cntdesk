@@ -42,3 +42,28 @@ fn test_deserialize_invalid_bytes_returns_error() {
     let result = Message::deserialize(&[0xFF, 0xFE]);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_frame_data_roundtrip() {
+    let msg = Message::FrameData {
+        seq: 42,
+        data: vec![0xDE, 0xAD, 0xBE, 0xEF],
+        is_keyframe: true,
+    };
+    let bytes = msg.serialize();
+    let decoded = Message::deserialize(&bytes).unwrap();
+    assert_eq!(msg, decoded);
+}
+
+#[test]
+fn test_frame_data_large_payload() {
+    // Simula frame codificado ~256KB
+    let msg = Message::FrameData {
+        seq: 1,
+        data: vec![0xAB; 262144],
+        is_keyframe: false,
+    };
+    let bytes = msg.serialize();
+    let decoded = Message::deserialize(&bytes).unwrap();
+    assert_eq!(msg, decoded);
+}
