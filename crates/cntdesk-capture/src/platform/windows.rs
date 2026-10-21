@@ -15,17 +15,18 @@ mod dxgi_impl {
     use windows::core::Interface;
     use windows::Win32::Graphics::Dxgi::{
         CreateDXGIFactory1, IDXGIFactory1, IDXGIAdapter1, IDXGIOutput, IDXGIOutput1,
-        IDXGIOutputDuplication, IDXGIResource, DXGI_FORMAT_B8G8R8A8_UNORM,
+        IDXGIOutputDuplication, IDXGIResource,
         DXGI_OUTPUT_DESC, DXGI_OUTDUPL_FRAME_INFO,
         DXGI_ERROR_WAIT_TIMEOUT, DXGI_ERROR_ACCESS_LOST,
     };
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
     use windows::Win32::Graphics::Direct3D11::{
         D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
-        D3D11_SDK_VERSION, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D_FEATURE_LEVEL_11_0,
+        D3D11_SDK_VERSION, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
         D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, D3D11_CPU_ACCESS_READ,
         D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
     };
-    use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL};
+    use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_11_0};
     use windows::Win32::Graphics::Dxgi::Common::DXGI_SAMPLE_DESC;
 
     pub struct DxgiInner {
@@ -56,8 +57,7 @@ mod dxgi_impl {
                     .map_err(|e| CoreError::Protocol(format!("Cast to IDXGIOutput1 failed: {}", e)))?;
 
                 // Get output description for dimensions
-                let mut desc = DXGI_OUTPUT_DESC::default();
-                output.GetDesc(&mut desc)
+                let desc = output.GetDesc()
                     .map_err(|e| CoreError::Protocol(format!("GetDesc failed: {}", e)))?;
 
                 let width = (desc.DesktopCoordinates.right - desc.DesktopCoordinates.left) as u32;
@@ -100,7 +100,7 @@ mod dxgi_impl {
                     },
                     Usage: D3D11_USAGE_STAGING,
                     BindFlags: Default::default(),
-                    CPUAccessFlags: D3D11_CPU_ACCESS_READ.0,
+                    CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
                     MiscFlags: Default::default(),
                 };
 
