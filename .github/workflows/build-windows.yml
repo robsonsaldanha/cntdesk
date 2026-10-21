@@ -28,7 +28,7 @@ jobs:
         run: cargo install tauri-cli --version "^2"
       - name: Build Windows installer
         working-directory: crates/cntdesk-client
-        run: cargo tauri build --target x86_64-pc-windows-msvc --bundles msi,nsis
+        run: cargo tauri build --target x86_64-pc-windows-msvc --bundles msi,nsis --features cntdesk-core/real-encoder
       - name: Create GitHub Release with installers
         uses: softprops/action-gh-release@v2
         with:

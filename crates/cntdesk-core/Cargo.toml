@@ -14,3 +14,10 @@ tokio = { workspace = true }
 rustls = { version = "0.23", features = ["ring"] }
 tracing = { workspace = true }
 rcgen = "0.13"
+
+[target.'cfg(windows)'.dependencies]
+x264 = { version = "0.5", optional = true }
+
+[features]
+default = []
+real-encoder = ["x264"]

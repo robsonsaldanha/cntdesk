@@ -1,29 +1,83 @@
-//! Relay service wrapping QUIC transport endpoint.
-//! Accepts connections, authenticates via AuthService, registers in signaling,
-//! spawns bidirectional forward tasks.
+//! Relay service: orchestrates QUIC transport, auth, and signaling for multi-viewer sessions.
+//!
+//! One host can serve multiple concurrent viewers. Host frames are fanned out
+//! to all viewers; viewer input events are routed back to the host.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
-use tokio::signal;
-use tracing::{error, info, warn};
+use tokio::sync::RwLock;
+use tracing::{info, warn, error};
 
 use cntdesk_core::crypto::KeyPair;
 use cntdesk_core::protocol::Message;
-use cntdesk_core::transport::{Connection, Transport};
+use cntdesk_core::transport::{TlsConfig, Transport};
 
 use crate::auth::AuthService;
 use crate::signaling::SignalingService;
 
-/// Relay service managing incoming QUIC connections.
+/// Active peer connections tracked by device_id.
+struct PeerConnections {
+    /// Map from device_id to their active connection state.
+    connections: Arc<RwLock<HashMap<String, PeerState>>>,
+}
+
+struct PeerState {
+    /// The QUIC connection endpoint for this peer.
+    transport_addr: String,
+    /// Session ID this peer belongs to.
+    session_id: Option<String>,
+}
+
+impl PeerConnections {
+    fn new() -> Self {
+        Self {
+            connections: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    async fn register(&self, device_id: &str, addr: &str) {
+        let mut conns = self.connections.write().await;
+        conns.insert(
+            device_id.to_string(),
+            PeerState {
+                transport_addr: addr.to_string(),
+                session_id: None,
+            },
+        );
+        info!(device_id = %device_id, addr = %addr, "Peer registered");
+    }
+
+    async fn set_session(&self, device_id: &str, session_id: &str) {
+        let mut conns = self.connections.write().await;
+        if let Some(state) = conns.get_mut(device_id) {
+            state.session_id = Some(session_id.to_string());
+        }
+    }
+
+    async fn get_session(&self, device_id: &str) -> Option<String> {
+        let conns = self.connections.read().await;
+        conns.get(device_id).and_then(|s| s.session_id.clone())
+    }
+
+    async fn unregister(&self, device_id: &str) {
+        let mut conns = self.connections.write().await;
+        conns.remove(device_id);
+        info!(device_id = %device_id, "Peer unregistered");
+    }
+}
+
+/// Relay service managing the main event loop.
 pub struct RelayService {
-    transport: Arc<Transport>,
-    auth: Arc<AuthService>,
-    signaling: Arc<SignalingService>,
-    server_keypair: Arc<KeyPair>,
+    transport: Transport,
+    auth: AuthService,
+    signaling: SignalingService,
+    server_keypair: KeyPair,
+    peers: PeerConnections,
 }
 
 impl RelayService {
-    /// Create a new relay service.
     pub fn new(
         transport: Transport,
         auth: AuthService,
@@ -31,189 +85,174 @@ impl RelayService {
         server_keypair: KeyPair,
     ) -> Self {
         Self {
-            transport: Arc::new(transport),
-            auth: Arc::new(auth),
-            signaling: Arc::new(signaling),
-            server_keypair: Arc::new(server_keypair),
+            transport,
+            auth,
+            signaling,
+            server_keypair,
+            peers: PeerConnections::new(),
         }
     }
 
-    /// Run the relay accept loop with graceful shutdown on SIGTERM/SIGINT.
+    /// Run the relay main loop: accept incoming QUIC connections and route messages.
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!("Relay service starting");
+        info!("Relay service started, accepting connections...");
 
-        let shutdown = async {
-            let ctrl_c = signal::ctrl_c();
-            #[cfg(unix)]
-            {
-                let mut sigterm =
-                    signal::unix::signal(signal::unix::SignalKind::terminate())
-                        .expect("failed to register SIGTERM handler");
-                tokio::select! {
-                    _ = ctrl_c => {},
-                    _ = sigterm.recv() => {},
-                }
-            }
-            #[cfg(not(unix))]
-            {
-                ctrl_c.await.ok();
-            }
-        };
-
-        let accept_loop = async {
-            loop {
-                match self.transport.accept().await {
-                    Ok(conn) => {
-                        let auth = self.auth.clone();
-                        let signaling = self.signaling.clone();
-                        let server_kp = self.server_keypair.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = Self::handle_connection(conn, &auth, &signaling, &server_kp).await {
-                                warn!(error = %e, "Connection handling failed");
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Accept failed");
-                        // Brief backoff on repeated accept failures
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    }
-                }
-            }
-        };
-
-        tokio::select! {
-            _ = shutdown => {
-                info!("Shutdown signal received, stopping relay service");
-            }
-            _ = accept_loop => {
-                warn!("Accept loop exited unexpectedly");
-            }
-        }
-
-        info!("Relay service stopped");
-        Ok(())
-    }
-
-    /// Handle a single incoming connection: authenticate, register, forward.
-    async fn handle_connection(
-        mut conn: Connection,
-        auth: &AuthService,
-        signaling: &SignalingService,
-        server_keypair: &KeyPair,
-    ) -> Result<(), String> {
-        // Wait for AuthRequest
-        let msg = conn.recv().await.map_err(|e| format!("recv auth request failed: {}", e))?;
-
-        let (device_id, password_hash) = match msg {
-            Message::AuthRequest { id, password_hash } => (id, password_hash),
-            other => {
-                return Err(format!("Expected AuthRequest, got {:?}", other));
-            }
-        };
-
-        // Verify device exists
-        if !auth.verify_device_exists(&device_id) {
-            let resp = Message::AuthResponse {
-                success: false,
-                session_token: None,
-            };
-            let _ = conn.send(&resp).await;
-            return Err(format!("Device '{}' not found", device_id));
-        }
-
-        // Verify password
-        match auth.verify_password(&device_id, &password_hash) {
-            Ok(true) => {}
-            Ok(false) => {
-                let resp = Message::AuthResponse {
-                    success: false,
-                    session_token: None,
-                };
-                let _ = conn.send(&resp).await;
-                return Err(format!("Password verification failed for '{}'", device_id));
-            }
-            Err(e) => {
-                let resp = Message::AuthResponse {
-                    success: false,
-                    session_token: None,
-                };
-                let _ = conn.send(&resp).await;
-                return Err(format!("Password check error for '{}': {}", device_id, e));
-            }
-        }
-
-        // Authentication successful — generate real session token
-        let session_token = auth.create_session_token(&device_id, server_keypair)
-            .map_err(|e| format!("Failed to create session token: {}", e))?;
-
-        let resp = Message::AuthResponse {
-            success: true,
-            session_token: Some(session_token),
-        };
-        conn.send(&resp)
-            .await
-            .map_err(|e| format!("send auth response failed: {}", e))?;
-
-        info!(device_id = %device_id, "Device authenticated with real session token");
-
-        // Try to pair with a waiting peer; if none, register as waiting
-        let session_id = if let Some(sid) = signaling.pair_with_waiting(&device_id).await {
-            info!(device_id = %device_id, session_id = %sid, "Paired with waiting peer");
-            sid
-        } else {
-            signaling.register_waiting_peer(&device_id).await;
-            info!(device_id = %device_id, "Registered as waiting peer");
-            // Use device_id as placeholder session until paired
-            device_id.clone()
-        };
-
-        // Enter relay forwarding loop
-        Self::forward_loop(conn, &device_id, &session_id, signaling).await
-    }
-
-    /// Forward messages bidirectionally through signaling.
-    async fn forward_loop(
-        mut conn: Connection,
-        device_id: &str,
-        session_id: &str,
-        signaling: &SignalingService,
-    ) -> Result<(), String> {
         loop {
-            match conn.recv().await {
-                Ok(msg) => {
-                    match &msg {
-                        Message::Disconnect { reason } => {
-                            info!(device_id = %device_id, reason = %reason, "Peer disconnected");
-                            break;
-                        }
-                        Message::FrameData { .. } | Message::InputEvent(_) | Message::IceCandidate { .. } => {
-                            // Route frame data, input events, and ICE candidates to paired peer
-                            if let Err(e) = signaling.route_message(session_id, msg.clone()).await {
-                                warn!(device_id = %device_id, error = %e, "Failed to route message");
-                            }
-                        }
-                        _ => {
-                            // Other messages logged but not forwarded
-                            info!(device_id = %device_id, "Non-forwardable message received");
-                        }
-                    }
+            match self.transport.accept().await {
+                Ok(conn) => {
+                    // Spawn handler for each incoming connection
+                    let auth = self.auth.clone();
+                    let signaling = self.signaling.clone();
+                    let peers = self.peers.clone();
 
-                    // Check for pending outbound messages from signaling
-                    let pending = signaling.get_pending_messages(session_id).await;
-                    for out_msg in pending {
-                        if let Err(e) = conn.send(&out_msg).await {
-                            warn!(device_id = %device_id, error = %e, "Failed to send pending message");
-                            break;
+                    tokio::spawn(async move {
+                        if let Err(e) = handle_peer_connection(conn, auth, signaling, peers).await {
+                            error!(error = %e, "Peer connection handler failed");
                         }
-                    }
+                    });
                 }
                 Err(e) => {
-                    info!(device_id = %device_id, error = %e, "Connection closed");
-                    break;
+                    error!(error = %e, "Failed to accept QUIC connection");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
-        Ok(())
     }
+}
+
+async fn handle_peer_connection(
+    conn: cntdesk_core::transport::Connection,
+    auth: AuthService,
+    signaling: SignalingService,
+    peers: PeerConnections,
+) -> Result<(), String> {
+    // First message should be AuthRequest
+    let first_msg = conn.recv().await.map_err(|e| format!("Recv failed: {}", e))?;
+
+    let (device_id, session_token) = match first_msg {
+        Message::AuthRequest { id, password_hash } => {
+            // Verify credentials
+            if !auth.verify_device_exists(&id) {
+                // Register new device
+                auth.register_new_device(&password_hash)?;
+            }
+
+            // Generate session token signed by server keypair
+            let token = auth.generate_session_token(&id)?;
+
+            // Send auth response
+            let response = Message::AuthResponse {
+                success: true,
+                session_token: Some(token),
+            };
+            conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
+
+            (id, token)
+        }
+        _ => return Err("First message must be AuthRequest".to_string()),
+    };
+
+    // Register peer
+    peers.register(&device_id, "quic").await;
+
+    // Check if this is a host or viewer
+    let is_host = auth.is_host_device(&device_id).await;
+
+    if is_host {
+        // Host: wait for viewers to connect
+        signaling.register_waiting_host(&device_id).await;
+        info!(device_id = %device_id, "Host waiting for viewers");
+
+        // Run host message loop: broadcast frames to all connected viewers
+        run_host_loop(conn, device_id, signaling.clone()).await?;
+    } else {
+        // Viewer: try to pair with a waiting host
+        if let Some(session_id) = signaling.pair_viewer_with_host(&device_id).await {
+            peers.set_session(&device_id, &session_id).await;
+            info!(device_id = %device_id, session_id = %session_id, "Viewer paired with host");
+
+            // Run viewer message loop: receive frames, send input
+            run_viewer_loop(conn, device_id, session_id, signaling.clone()).await?;
+        } else {
+            return Err("No waiting host available".to_string());
+        }
+    }
+
+    peers.unregister(&device_id).await;
+    Ok(())
+}
+
+async fn run_host_loop(
+    conn: cntdesk_core::transport::Connection,
+    host_id: String,
+    signaling: SignalingService,
+) -> Result<(), String> {
+    info!(host_id = %host_id, "Running host loop");
+
+    loop {
+        match conn.recv().await {
+            Ok(Message::Disconnect { reason }) => {
+                info!(reason = %reason, "Host disconnecting");
+                break;
+            }
+            Ok(msg) => {
+                // Get session for this host
+                if let Some(session_id) = signaling.get_session_for_peer(&host_id).await {
+                    // Fan-out message to all viewers in session
+                    signaling.route_message_from(&session_id, &host_id, msg).await?;
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, host_id = %host_id, "Host connection error");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_viewer_loop(
+    conn: cntdesk_core::transport::Connection,
+    viewer_id: String,
+    session_id: String,
+    signaling: SignalingService,
+) -> Result<(), String> {
+    info!(viewer_id = %viewer_id, session_id = %session_id, "Running viewer loop");
+
+    loop {
+        // Check for pending messages from host
+        let pending = signaling.get_pending_messages_for(&session_id, &viewer_id).await;
+        for msg in pending {
+            conn.send(&msg).await.map_err(|e| format!("Send failed: {}", e))?;
+        }
+
+        // Receive input events from viewer UI
+        match tokio::time::timeout(Duration::from_millis(50), conn.recv()).await {
+            Ok(Ok(Message::InputEvent(event))) => {
+                // Route input event to host
+                signaling.route_message_from(&session_id, &viewer_id, Message::InputEvent(event)).await?;
+            }
+            Ok(Ok(Message::Disconnect { reason })) => {
+                info!(reason = %reason, "Viewer disconnecting");
+                break;
+            }
+            Ok(Ok(_)) => {
+                // Ignore non-input messages from viewer
+            }
+            Ok(Err(e)) => {
+                warn!(error = %e, viewer_id = %viewer_id, "Viewer connection error");
+                break;
+            }
+            Err(_) => {
+                // Timeout, continue loop
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    // Remove viewer from session
+    signaling.remove_peer(&viewer_id).await;
+    Ok(())
 }

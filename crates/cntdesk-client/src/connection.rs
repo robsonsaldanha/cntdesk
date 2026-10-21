@@ -182,6 +182,31 @@ impl ConnectionManager {
         Ok(HostSession::new(conn))
     }
 
+    /// Run the host receive loop: injects incoming InputEvents into the local OS.
+    pub async fn run_host_input_loop(session: &mut HostSession) -> Result<()> {
+        loop {
+            match session.recv().await {
+                Ok(Message::InputEvent(event)) => {
+                    if let Err(e) = crate::input_injection::inject(&event) {
+                        tracing::warn!(error = %e, "Failed to inject input event");
+                    }
+                }
+                Ok(Message::Disconnect { reason }) => {
+                    tracing::info!(reason = %reason, "Viewer disconnected");
+                    break;
+                }
+                Ok(other) => {
+                    tracing::debug!(msg = ?other, "Non-input message received by host");
+                }
+                Err(e) => {
+                    tracing::info!(error = %e, "Host connection closed");
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Connect with exponential backoff retry (max 30s).
     async fn connect_with_retry(&self, addr: &str) -> Result<Connection> {
         let transport = self.transport.as_ref()

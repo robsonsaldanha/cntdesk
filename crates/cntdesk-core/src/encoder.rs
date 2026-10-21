@@ -99,8 +99,6 @@ pub fn create_encoder(config: &EncoderConfig) -> Result<Box<dyn VideoEncoderBack
         config.bitrate_kbps
     );
 
-    // TODO(phase2): Try HW encoders first (NVENC → AMF → VAAPI → VideoToolbox)
-    // Fall back to x264 software encoder
-    crate::encoder_x264::X264Encoder::new(config)
-        .map(|e| Box::new(e) as Box<dyn VideoEncoderBackend>)
+    // Use real x264 when available, mock otherwise
+    crate::encoder_x264::create_x264_encoder(config)
 }

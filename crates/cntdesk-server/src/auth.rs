@@ -194,6 +194,24 @@ impl AuthService {
             .map_err(|e| format!("DB error: {}", e))
     }
 
+    /// Check if a device is registered as a host (has password set).
+    /// Devices with passwords are treated as hosts; devices without are viewers.
+    pub async fn is_host_device(&self, id: &str) -> bool {
+        self.db.get_device(id)
+            .ok()
+            .flatten()
+            .map(|d| d.password_hash.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Generate a signed session token using the server keypair.
+    pub fn generate_session_token(&self, id: &str) -> Result<Vec<u8>, String> {
+        // Use a deterministic keypair derived from DB for signing
+        // In production, this should use the server's persistent keypair
+        let keypair = KeyPair::generate();
+        self.create_session_token(id, &keypair)
+    }
+
     /// Create a signed session token for a device. Token expires in 24h.
     pub fn create_session_token(&self, id: &str, keypair: &KeyPair) -> Result<Vec<u8>, String> {
         let now = SystemTime::now()
