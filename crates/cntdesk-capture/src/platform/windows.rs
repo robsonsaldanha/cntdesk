@@ -12,10 +12,12 @@ use crate::capture::{CaptureConfig, ScreenCaptureBackend};
 #[cfg(target_os = "windows")]
 mod dxgi_impl {
     use super::*;
+    use windows::core::Interface;
     use windows::Win32::Graphics::Dxgi::{
         CreateDXGIFactory1, IDXGIFactory1, IDXGIAdapter1, IDXGIOutput, IDXGIOutput1,
-        IDXGIOutputDuplication, DXGI_FORMAT_B8G8R8A8_UNORM,
-        DXGI_OUTPUT_DESC, DXGI_MODE_DESC,
+        IDXGIOutputDuplication, IDXGIResource, DXGI_FORMAT_B8G8R8A8_UNORM,
+        DXGI_OUTPUT_DESC, DXGI_OUTDUPL_FRAME_INFO,
+        DXGI_ERROR_WAIT_TIMEOUT, DXGI_ERROR_ACCESS_LOST,
     };
     use windows::Win32::Graphics::Direct3D11::{
         D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
@@ -24,8 +26,7 @@ mod dxgi_impl {
         D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
     };
     use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL};
-    use windows::Win32::Foundation::{RECT, BOOL};
-    use windows::core::Result as WinResult;
+    use windows::Win32::Graphics::Dxgi::Common::DXGI_SAMPLE_DESC;
 
     pub struct DxgiInner {
         device: ID3D11Device,
@@ -51,7 +52,7 @@ mod dxgi_impl {
                 let output: IDXGIOutput = adapter.EnumOutputs(0)
                     .map_err(|e| CoreError::Protocol(format!("EnumOutputs failed: {}", e)))?;
 
-                let output1: IDXGIOutput1 = output.cast()
+                let output1: IDXGIOutput1 = output.cast::<IDXGIOutput1>()
                     .map_err(|e| CoreError::Protocol(format!("Cast to IDXGIOutput1 failed: {}", e)))?;
 
                 // Get output description for dimensions
@@ -64,8 +65,8 @@ mod dxgi_impl {
 
                 // Create D3D11 device with BGRA support
                 let mut feature_level = D3D_FEATURE_LEVEL::default();
-                let device: ID3D11Device;
-                let context: ID3D11DeviceContext;
+                let mut device: Option<ID3D11Device> = None;
+                let mut context: Option<ID3D11DeviceContext> = None;
 
                 D3D11CreateDevice(
                     None,
@@ -79,6 +80,9 @@ mod dxgi_impl {
                     Some(&mut context),
                 ).map_err(|e| CoreError::Protocol(format!("D3D11CreateDevice failed: {}", e)))?;
 
+                let device = device.ok_or_else(|| CoreError::Protocol("D3D11CreateDevice returned null device".into()))?;
+                let context = context.ok_or_else(|| CoreError::Protocol("D3D11CreateDevice returned null context".into()))?;
+
                 // Create desktop duplication
                 let duplication = output1.DuplicateOutput(&device)
                     .map_err(|e| CoreError::Protocol(format!("DuplicateOutput failed: {}", e)))?;
@@ -90,18 +94,20 @@ mod dxgi_impl {
                     MipLevels: 1,
                     ArraySize: 1,
                     Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                    SampleDesc: windows::Win32::Graphics::Dxgi::Common::DXGI_SAMPLE_DESC {
+                    SampleDesc: DXGI_SAMPLE_DESC {
                         Count: 1,
                         Quality: 0,
                     },
                     Usage: D3D11_USAGE_STAGING,
                     BindFlags: Default::default(),
-                    CPUAccessFlags: D3D11_CPU_ACCESS_READ,
+                    CPUAccessFlags: D3D11_CPU_ACCESS_READ.0,
                     MiscFlags: Default::default(),
                 };
 
-                let staging_texture: ID3D11Texture2D = device.CreateTexture2D(&tex_desc, None)
+                let mut staging_texture: Option<ID3D11Texture2D> = None;
+                device.CreateTexture2D(&tex_desc, None, Some(&mut staging_texture))
                     .map_err(|e| CoreError::Protocol(format!("CreateTexture2D failed: {}", e)))?;
+                let staging_texture = staging_texture.ok_or_else(|| CoreError::Protocol("CreateTexture2D returned null".into()))?;
 
                 Ok(Self {
                     device,
@@ -123,8 +129,8 @@ mod dxgi_impl {
 
             unsafe {
                 // Acquire next frame with 16ms timeout (~60fps max)
-                let mut frame_info = windows::Win32::Graphics::Dxgi::DXGI_OUTDUPL_FRAME_INFO::default();
-                let mut resource: Option<windows::Win32::Graphics::Dxgi::IDXGIResource> = None;
+                let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
+                let mut resource: Option<IDXGIResource> = None;
 
                 let result = self.duplication.AcquireNextFrame(
                     16,
@@ -135,7 +141,7 @@ mod dxgi_impl {
                 match result {
                     Ok(()) => {
                         if let Some(res) = resource {
-                            let desktop_texture: ID3D11Texture2D = res.cast()
+                            let desktop_texture: ID3D11Texture2D = res.cast::<ID3D11Texture2D>()
                                 .map_err(|e| CoreError::Protocol(format!("Cast to texture failed: {}", e)))?;
 
                             // Copy desktop texture to staging texture
@@ -170,7 +176,7 @@ mod dxgi_impl {
                                     let dst_offset = y * expected_pitch;
                                     std::ptr::copy_nonoverlapping(
                                         (mapped.pData as *const u8).add(src_offset),
-                                        data.as_mut_mut().add(dst_offset),
+                                        data.as_mut_ptr().add(dst_offset),
                                         expected_pitch,
                                     );
                                 }
@@ -202,9 +208,9 @@ mod dxgi_impl {
                     Err(e) => {
                         // DXGI_ERROR_WAIT_TIMEOUT is normal when screen hasn't changed
                         let code = e.code();
-                        if code == windows::Win32::Graphics::Dxgi::DXGI_ERROR_WAIT_TIMEOUT {
+                        if code == DXGI_ERROR_WAIT_TIMEOUT {
                             Ok(None)
-                        } else if code == windows::Win32::Graphics::Dxgi::DXGI_ERROR_ACCESS_LOST {
+                        } else if code == DXGI_ERROR_ACCESS_LOST {
                             // Display mode changed, need to recreate duplication
                             tracing::warn!("DXGI access lost, will retry");
                             let _ = self.duplication.ReleaseFrame();
