@@ -105,7 +105,7 @@ impl SignalingService {
     /// Try to pair a newly arrived viewer with an existing waiting host.
     /// Returns Some(session_id) if pairing succeeded, None if no waiting host available.
     pub async fn pair_viewer_with_host(&self, viewer_id: &str) -> Option<String> {
-        let mut hosts = self.waiting_hosts.write().await;
+        let hosts = self.waiting_hosts.write().await;
         // Find first waiting host that isn't ourselves
         let host_id = hosts.keys()
             .find(|id| id.as_str() != viewer_id)

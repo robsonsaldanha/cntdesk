@@ -183,7 +183,7 @@ async fn handle_peer_connection(
 }
 
 async fn run_host_loop(
-    conn: cntdesk_core::transport::Connection,
+    mut conn: cntdesk_core::transport::Connection,
     host_id: String,
     signaling: SignalingService,
 ) -> Result<(), String> {
@@ -213,7 +213,7 @@ async fn run_host_loop(
 }
 
 async fn run_viewer_loop(
-    conn: cntdesk_core::transport::Connection,
+    mut conn: cntdesk_core::transport::Connection,
     viewer_id: String,
     session_id: String,
     signaling: SignalingService,
