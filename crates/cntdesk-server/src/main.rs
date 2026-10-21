@@ -18,6 +18,11 @@ use crate::signaling::SignalingService;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Install rustls CryptoProvider (ring) before any TLS usage
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls CryptoProvider");
+
     // Setup structured JSON logging
     tracing_subscriber::fmt()
         .json()
