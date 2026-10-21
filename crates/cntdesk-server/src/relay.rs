@@ -122,7 +122,7 @@ impl RelayService {
 }
 
 async fn handle_peer_connection(
-    conn: cntdesk_core::transport::Connection,
+    mut conn: cntdesk_core::transport::Connection,
     auth: AuthService,
     signaling: SignalingService,
     peers: PeerConnections,
@@ -144,7 +144,7 @@ async fn handle_peer_connection(
             // Send auth response
             let response = Message::AuthResponse {
                 success: true,
-                session_token: Some(token),
+                session_token: Some(token.clone()),
             };
             conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
 
