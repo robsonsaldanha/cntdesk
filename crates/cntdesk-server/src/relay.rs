@@ -130,7 +130,7 @@ async fn handle_peer_connection(
     // First message should be AuthRequest
     let first_msg = conn.recv().await.map_err(|e| format!("Recv failed: {}", e))?;
 
-    let (device_id, session_token) = match first_msg {
+    let (device_id, _session_token) = match first_msg {
         Message::AuthRequest { id, password_hash } => {
             // Verify credentials
             if !auth.verify_device_exists(&id) {
@@ -165,7 +165,7 @@ async fn handle_peer_connection(
         info!(device_id = %device_id, "Host waiting for viewers");
 
         // Run host message loop: broadcast frames to all connected viewers
-        run_host_loop(conn, device_id, signaling.clone()).await?;
+        run_host_loop(conn, device_id.clone(), signaling.clone()).await?;
     } else {
         // Viewer: try to pair with a waiting host
         if let Some(session_id) = signaling.pair_viewer_with_host(&device_id).await {
@@ -173,7 +173,7 @@ async fn handle_peer_connection(
             info!(device_id = %device_id, session_id = %session_id, "Viewer paired with host");
 
             // Run viewer message loop: receive frames, send input
-            run_viewer_loop(conn, device_id, session_id, signaling.clone()).await?;
+            run_viewer_loop(conn, device_id.clone(), session_id, signaling.clone()).await?;
         } else {
             return Err("No waiting host available".to_string());
         }
