@@ -21,7 +21,7 @@ mod dxgi_impl {
         D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
         D3D11_SDK_VERSION, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D_FEATURE_LEVEL_11_0,
         D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, D3D11_CPU_ACCESS_READ,
-        D3D11_BIND_FLAG(0), D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
+        D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
     };
     use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL};
     use windows::Win32::Foundation::{RECT, BOOL};
@@ -95,7 +95,7 @@ mod dxgi_impl {
                         Quality: 0,
                     },
                     Usage: D3D11_USAGE_STAGING,
-                    BindFlags: D3D11_BIND_FLAG(0),
+                    BindFlags: Default::default(),
                     CPUAccessFlags: D3D11_CPU_ACCESS_READ,
                     MiscFlags: Default::default(),
                 };
