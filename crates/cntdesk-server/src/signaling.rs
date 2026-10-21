@@ -24,6 +24,7 @@ pub enum PeerRole {
 }
 
 /// State for an active signaling session supporting multi-viewer fan-out.
+#[derive(Clone)]
 struct SessionState {
     /// The host device ID (exactly one per session).
     host_id: String,
