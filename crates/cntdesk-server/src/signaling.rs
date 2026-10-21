@@ -38,6 +38,7 @@ struct SessionState {
 }
 
 /// Signaling service managing active sessions behind RwLock.
+#[derive(Clone)]
 pub struct SignalingService {
     sessions: Arc<RwLock<HashMap<String, SessionState>>>,
     /// Peers waiting to be paired as hosts (device_id -> timestamp registered).

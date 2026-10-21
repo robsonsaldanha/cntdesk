@@ -9,6 +9,7 @@ use rand::Rng;
 use rusqlite::params;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[derive(Clone)]
 pub struct AuthService {
     db: Database,
     id_gen: IdGenerator,

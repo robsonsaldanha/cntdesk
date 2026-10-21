@@ -1,18 +1,19 @@
 use rand::rngs::OsRng;
 use rand::Rng;
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Generates unique device IDs in XXX-XXX-XXX format (9 digits, dash-separated).
 /// Uses CSPRNG for randomness and tracks generated IDs to prevent collisions.
+#[derive(Clone)]
 pub struct IdGenerator {
-    known_ids: Mutex<HashSet<String>>,
+    known_ids: Arc<Mutex<HashSet<String>>>,
 }
 
 impl IdGenerator {
     pub fn new() -> Self {
         Self {
-            known_ids: Mutex::new(HashSet::new()),
+            known_ids: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 

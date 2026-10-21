@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct DeviceRecord {
@@ -9,8 +9,9 @@ pub struct DeviceRecord {
     pub created_at: u64,
 }
 
+#[derive(Clone)]
 pub struct Database {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Database {
@@ -20,13 +21,13 @@ impl Database {
         // when sqlcipher-sys is available in production builds.
         let conn = Connection::open(path)?;
         Self::init_schema(&conn)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
     }
 
     pub fn open_in_memory(_key: &str) -> anyhow::Result<Self> {
         let conn = Connection::open_in_memory()?;
         Self::init_schema(&conn)?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
     }
 
     fn init_schema(conn: &Connection) -> SqlResult<()> {

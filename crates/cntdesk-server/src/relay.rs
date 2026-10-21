@@ -18,6 +18,7 @@ use crate::auth::AuthService;
 use crate::signaling::SignalingService;
 
 /// Active peer connections tracked by device_id.
+#[derive(Clone)]
 struct PeerConnections {
     /// Map from device_id to their active connection state.
     connections: Arc<RwLock<HashMap<String, PeerState>>>,
