@@ -50,9 +50,20 @@ impl Transport {
             .parse()
             .map_err(|e| CoreError::Protocol(format!("invalid address {}: {}", addr, e)))?;
 
-        let cert = rustls::pki_types::CertificateDer::from(tls_config.server_cert.clone());
-        let key = rustls::pki_types::PrivateKeyDer::try_from(tls_config.server_key.clone())
-            .map_err(|e| CoreError::Crypto(format!("invalid private key: {}", e)))?;
+        // Parse PEM-encoded cert and key to DER format for rustls
+        let cert_pem = std::str::from_utf8(&tls_config.server_cert)
+            .map_err(|e| CoreError::Crypto(format!("cert not valid UTF-8: {}", e)))?;
+        let certs: Vec<rustls::pki_types::CertificateDer<'static>> = rustls_pemfile::certs(&mut cert_pem.as_bytes())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| CoreError::Crypto(format!("failed to parse cert PEM: {}", e)))?;
+        let cert = certs.into_iter().next()
+            .ok_or_else(|| CoreError::Crypto("no certificate found in PEM".into()))?;
+
+        let key_pem = std::str::from_utf8(&tls_config.server_key)
+            .map_err(|e| CoreError::Crypto(format!("key not valid UTF-8: {}", e)))?;
+        let key = rustls_pemfile::private_key(&mut key_pem.as_bytes())
+            .map_err(|e| CoreError::Crypto(format!("failed to parse key PEM: {}", e)))?
+            .ok_or_else(|| CoreError::Crypto("no private key found in PEM".into()))?;
 
         let mut server_crypto = rustls::ServerConfig::builder()
             .with_no_client_auth()
