@@ -15,6 +15,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 thiserror = { workspace = true }
 rand = { workspace = true }
 ed25519-dalek = { workspace = true }
+rustls = { version = "0.23", features = ["ring"] }
 
 [dev-dependencies]
 regex = "1"
