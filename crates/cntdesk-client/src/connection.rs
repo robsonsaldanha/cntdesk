@@ -212,11 +212,8 @@ impl ConnectionManager {
     /// Ensure transport is initialized (lazy init on first connect).
     fn ensure_transport(&mut self) -> Result<()> {
         if self.transport.is_none() {
-            // Bind to ephemeral port for client-side QUIC endpoint
-            let transport = Transport::bind("0.0.0.0:0", &TlsConfig {
-                server_cert: vec![],
-                server_key: vec![],
-                client_ca: None,
+            // Bind to ephemeral port for client-side QUIC endpoint (no server TLS needed)
+            let transport = Transport::bind_client("0.0.0.0:0")
             }).context("Failed to create QUIC transport endpoint")?;
             self.transport = Some(transport);
             tracing::info!("QUIC transport endpoint initialized for client");

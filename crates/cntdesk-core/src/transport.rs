@@ -15,6 +15,49 @@ use tracing::warn;
 use crate::error::CoreError;
 use crate::protocol::Message;
 
+/// Certificate verifier that accepts any server certificate (for self-signed dev certs).
+#[derive(Debug)]
+struct SkipServerVerification;
+
+impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::ED25519,
+        ]
+    }
+}
+
 /// Connection establishment timeout.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -83,28 +126,33 @@ impl Transport {
         Ok(Self { endpoint })
     }
 
+    /// Bind a client-only QUIC endpoint (no server TLS config needed).
+    pub fn bind_client(addr: &str) -> Result<Self, CoreError> {
+        let socket_addr: SocketAddr = addr
+            .parse()
+            .map_err(|e| CoreError::Protocol(format!("invalid address {}: {}", addr, e)))?;
+
+        let endpoint = Endpoint::client(socket_addr)
+            .map_err(|e| CoreError::Protocol(format!("client endpoint bind failed: {}", e)))?;
+
+        Ok(Self { endpoint })
+    }
+
     /// Connect to a remote QUIC endpoint.
     pub async fn connect(
         &self,
         addr: &str,
-        tls_config: &TlsConfig,
+        _tls_config: &TlsConfig,
     ) -> Result<Connection, CoreError> {
         let socket_addr: SocketAddr = addr
             .parse()
             .map_err(|e| CoreError::Protocol(format!("invalid address {}: {}", addr, e)))?;
 
-        let mut roots = rustls::RootCertStore::empty();
-        if let Some(ca) = &tls_config.client_ca {
-            let cert = rustls::pki_types::CertificateDer::from(ca.clone());
-            roots.add(cert).map_err(|e| {
-                CoreError::Crypto(format!("failed to add CA cert: {}", e))
-            })?;
-        }
-
-        let mut client_crypto = rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
+        // Accept any server certificate (self-signed) for dev/testing
+        let client_crypto = rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(SkipServerVerification))
             .with_no_client_auth();
-        client_crypto.alpn_protocols = vec![b"cntdesk".to_vec()];
 
         let mut client_config = quinn::ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(client_crypto)
