@@ -55,7 +55,9 @@ pub fn register_ipc<R: Runtime>(builder: Builder<R>, ipc: AppIpc) -> Builder<R> 
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
-            tokio::spawn(async move {
+            // MUST use tauri::async_runtime::spawn: setup() runs outside any
+            // Tokio reactor, so raw tokio::spawn panics and kills the app.
+            tauri::async_runtime::spawn(async move {
                 // Take the receiver (only one consumer allowed)
                 let mut rx = match connection::take_frame_receiver() {
                     Some(rx) => rx,
