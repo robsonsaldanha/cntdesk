@@ -49,8 +49,10 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version 1.82.6
+      - name: Install cargo-expand and flutter_rust_bridge_codegen
+        run: |
+          cargo install cargo-expand
+          cargo install flutter_rust_bridge_codegen --version 1.82.6
 
       - name: Generate Flutter-Rust bridge code
         run: flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
