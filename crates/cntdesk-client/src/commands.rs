@@ -69,6 +69,8 @@ pub async fn connect(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut cm = state.connection_manager.lock().await;
+    // If remote_id is empty, this is a host registration request
+    // If remote_id is non-empty, this is a viewer connection request
     cm.connect_to_peer(&remote_id, &password)
         .await
         .map_err(|e| e.to_string())?;

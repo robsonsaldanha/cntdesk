@@ -140,31 +140,73 @@ impl ConnectionManager {
         }
     }
 
-    /// Connect to a remote peer as a viewer.
+    /// Connect to server: if id is empty, register as host (waiting for viewers);
+    /// if id is non-empty, connect as viewer to that remote host.
     pub async fn connect_to_peer(&mut self, id: &str, password: &str) -> Result<()> {
         self.state = ConnectionState::Connecting;
         let addr = self.server_addr.clone();
         let mut conn = self.connect_with_retry(&addr).await?;
 
-        let msg = Message::AuthRequest {
-            id: id.to_string(),
-            password_hash: password.as_bytes().to_vec(),
-        };
-        conn.send(&msg).await.context("Failed to send auth request")?;
+        if id.is_empty() {
+            // Host registration mode: send our own device ID + public key (32 bytes)
+            // Server treats 32-byte password_hash as host registration
+            let keypair = self.auth.ensure_identity()?;
+            let my_id = self.device_id.clone().unwrap_or_default();
+            let msg = Message::AuthRequest {
+                id: my_id,
+                password_hash: keypair.public_key_bytes(),
+            };
+            conn.send(&msg).await.context("Failed to send host registration")?;
 
-        match conn.recv().await.context("Failed to receive auth response")? {
-            Message::AuthResponse { success: true, .. } => {
-                self.active_session = Some(PeerSession::new(conn));
-                self.state = ConnectionState::Connected { remote_id: id.to_string() };
-                Ok(())
+            match conn.recv().await.context("Failed to receive auth response")? {
+                Message::AuthResponse { success: true, session_token, .. } => {
+                    // Persist device ID if server assigned one
+                    if let Some(token) = session_token {
+                        if self.device_id.is_none() {
+                            // Server may have assigned an ID in the token or response
+                            // For now, keep the local ID
+                        }
+                    }
+                    self.active_session = Some(PeerSession::new(conn));
+                    self.state = ConnectionState::Hosting {
+                        device_id: self.device_id.clone().unwrap_or_else(|| "unknown".to_string()),
+                    };
+                    tracing::info!("Registered as host, waiting for viewers");
+                    Ok(())
+                }
+                Message::AuthResponse { success: false, .. } => {
+                    self.state = ConnectionState::Disconnected;
+                    anyhow::bail!("Server rejected host registration")
+                }
+                other => {
+                    self.state = ConnectionState::Disconnected;
+                    anyhow::bail!("Unexpected message during host registration: {:?}", other)
+                }
             }
-            Message::AuthResponse { success: false, .. } => {
-                self.state = ConnectionState::Disconnected;
-                anyhow::bail!("Authentication failed for peer {}", id)
-            }
-            other => {
-                self.state = ConnectionState::Disconnected;
-                anyhow::bail!("Unexpected message during peer auth: {:?}", other)
+        } else {
+            // Viewer connection mode: send target host ID + password string
+            // Server treats non-32-byte password_hash as viewer connection
+            let msg = Message::AuthRequest {
+                id: id.to_string(),
+                password_hash: password.as_bytes().to_vec(),
+            };
+            conn.send(&msg).await.context("Failed to send auth request")?;
+
+            match conn.recv().await.context("Failed to receive auth response")? {
+                Message::AuthResponse { success: true, .. } => {
+                    self.active_session = Some(PeerSession::new(conn));
+                    self.state = ConnectionState::Connected { remote_id: id.to_string() };
+                    tracing::info!(remote_id = %id, "Connected as viewer");
+                    Ok(())
+                }
+                Message::AuthResponse { success: false, .. } => {
+                    self.state = ConnectionState::Disconnected;
+                    anyhow::bail!("Authentication failed for peer {}", id)
+                }
+                other => {
+                    self.state = ConnectionState::Disconnected;
+                    anyhow::bail!("Unexpected message during peer auth: {:?}", other)
+                }
             }
         }
     }
