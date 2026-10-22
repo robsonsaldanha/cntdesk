@@ -1,6 +1,0 @@
-/target
-*.swp
-.env
-*.db
-*.db-shm
-*.db-walui/node_modules/

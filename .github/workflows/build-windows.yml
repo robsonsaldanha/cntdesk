@@ -1,44 +1,72 @@
 name: Build Windows Installer
+
 on:
   push:
-    branches: [master, main]
-  workflow_dispatch:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build-windows:
-    permissions:
-      contents: write
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          targets: x86_64-pc-windows-msvc
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
         with:
-          node-version: '20'
-      - name: Install frontend dependencies
-        working-directory: ui
-        run: npm install
-      - name: Build frontend
-        working-directory: ui
-        run: npm run build
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2"
-      - name: Build Windows installer
-        working-directory: crates/cntdesk-client
-        run: cargo tauri build --target x86_64-pc-windows-msvc --bundles msi,nsis
-      - name: Create GitHub Release with installers
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Build Flutter UI
+        run: |
+          cd flutter
+          flutter pub get
+          flutter build windows --release
+
+      - name: Build Rust binary
+        run: cargo build --release --features flutter
+
+      - name: Package installer
+        run: |
+          $exe = "target/release/cntdesk.exe"
+          $flutter_build = "flutter/build/windows/x64/runner/Release"
+          New-Item -ItemType Directory -Force -Path "dist"
+          Copy-Item $exe "dist/"
+          Copy-Item "$flutter_build/*" "dist/" -Recurse
+          Compress-Archive -Path "dist/*" -DestinationPath "CNT.Desk_${{ github.run_number }}_windows.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cntdesk-windows
+          path: CNT.Desk_${{ github.run_number }}_windows.zip
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: CNT Desk Build ${{ github.run_number }}
-          files: |
-            target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-            target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          files: CNT.Desk_${{ github.run_number }}_windows.zip
           draft: false
           prerelease: true
-          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
