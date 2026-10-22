@@ -50,11 +50,10 @@ pub fn register_ipc<R: Runtime>(builder: Builder<R>, ipc: AppIpc) -> Builder<R> 
             crate::commands::send_input,
             crate::commands::get_connection_state,
         ])
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                tracing::info!("Window close requested, initiating graceful shutdown");
-                api.prevent_close();
-                let _ = window.close();
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                tracing::info!("Window close requested, exiting application");
+                std::process::exit(0);
             }
         })
 }

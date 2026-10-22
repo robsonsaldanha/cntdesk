@@ -9,6 +9,11 @@ pub mod ipc;
 use tracing_subscriber::{fmt, EnvFilter};
 
 fn main() {
+    // Install rustls CryptoProvider (ring) before any TLS/QUIC usage
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls CryptoProvider");
+
     // Initialize tracing
     fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
@@ -28,7 +33,7 @@ fn main() {
         .expect("Failed to initialize client auth for connection");
 
     let server_addr = std::env::var("CNTDESK_SERVER_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:4433".to_string());
+        .unwrap_or_else(|_| "143.95.209.35:4433".to_string());
 
     let connection_manager = connection::ConnectionManager::new(&server_addr, auth_for_conn)
         .expect("Failed to initialize connection manager");
