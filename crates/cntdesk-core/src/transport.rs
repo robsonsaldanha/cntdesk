@@ -149,10 +149,11 @@ impl Transport {
             .map_err(|e| CoreError::Protocol(format!("invalid address {}: {}", addr, e)))?;
 
         // Accept any server certificate (self-signed) for dev/testing
-        let client_crypto = rustls::ClientConfig::builder()
+        let mut client_crypto = rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(SkipServerVerification))
             .with_no_client_auth();
+        client_crypto.alpn_protocols = vec![b"cntdesk".to_vec()];
 
         let mut client_config = quinn::ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(client_crypto)
