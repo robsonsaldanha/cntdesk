@@ -1,9 +1,8 @@
 //! Client connection manager with retry logic and session management.
 //!
 //! Spawns background data-plane tasks after successful auth:
-//! - Host: capture → encode → send FrameMetadata + FrameData
-//! - Viewer: recv FrameData → push to FRAME_CHANNEL for frontend rendering
-
+//! - Host: capture → send raw BGRA FrameMetadata + FrameData (no encoder)
+//! - Viewer: recv FrameData → push to FRAME_CHANNEL; send input via mpsc channel
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -39,25 +38,6 @@ pub struct FrameEvent {
     pub is_keyframe: bool,
 }
 
-/// Typed wrapper for a QUIC session (used by both host and viewer).
-pub struct PeerSession {
-    conn: Connection,
-}
-
-impl PeerSession {
-    pub fn new(conn: Connection) -> Self {
-        Self { conn }
-    }
-
-    pub async fn send(&mut self, msg: &Message) -> Result<()> {
-        self.conn.send(msg).await.map_err(|e| anyhow::anyhow!("{}", e))
-    }
-
-    pub async fn recv(&mut self) -> Result<Message> {
-        self.conn.recv().await.map_err(|e| anyhow::anyhow!("{}", e))
-    }
-}
-
 /// Manages client connections to the CNT Desk server and peers.
 pub struct ConnectionManager {
     transport: Option<Transport>,
@@ -65,8 +45,8 @@ pub struct ConnectionManager {
     server_addr: String,
     device_id: Option<String>,
     state: ConnectionState,
-    /// Active QUIC connection — taken (moved) into background task on spawn.
-    active_conn: Option<Connection>,
+    /// Channel sender for outbound input events (viewer mode).
+    input_tx: Option<mpsc::Sender<cntdesk_core::protocol::InputEvent>>,
     /// Handle to cancel background data-plane tasks on disconnect.
     cancel_token: Option<tokio_util::sync::CancellationToken>,
 }
@@ -80,7 +60,7 @@ impl ConnectionManager {
             server_addr: server_addr.to_string(),
             device_id,
             state: ConnectionState::Disconnected,
-            active_conn: None,
+            input_tx: None,
             cancel_token: None,
         })
     }
@@ -93,7 +73,7 @@ impl ConnectionManager {
             server_addr: server_addr.to_string(),
             device_id,
             state: ConnectionState::Disconnected,
-            active_conn: None,
+            input_tx: None,
             cancel_token: None,
         }
     }
@@ -108,9 +88,9 @@ impl ConnectionManager {
 
     /// Send an input event through the active connection (viewer → host).
     pub async fn send_input(&mut self, event: cntdesk_core::protocol::InputEvent) -> Result<()> {
-        let conn = self.active_conn.as_mut()
-            .ok_or_else(|| anyhow::anyhow!("Not connected: no active session"))?;
-        conn.send(&Message::InputEvent(event)).await
+        let tx = self.input_tx.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Not connected: no input channel"))?;
+        tx.send(event).await
             .map_err(|e| anyhow::anyhow!("Failed to send input: {}", e))
     }
 
@@ -144,7 +124,6 @@ impl ConnectionManager {
                     // Move connection into background capture task
                     let cancel = tokio_util::sync::CancellationToken::new();
                     self.cancel_token = Some(cancel.clone());
-                    self.active_conn = None; // moved into task
                     spawn_host_capture_loop(conn, cancel);
                     Ok(())
                 }
@@ -167,22 +146,15 @@ impl ConnectionManager {
             match conn.recv().await.context("Failed to receive auth response")? {
                 Message::AuthResponse { success: true, .. } => {
                     self.state = ConnectionState::Connected { remote_id: id.to_string() };
-                    tracing::info!(remote_id = %id, "Connected as viewer, spawning receive loop");
+                    tracing::info!(remote_id = %id, "Connected as viewer, spawning combined loop");
 
-                    // Keep connection in active_conn for send_input() AND
-                    // spawn a separate receive task that reads from it.
-                    // Problem: Connection isn't Clone. Solution: move conn
-                    // into receive task, use a separate channel for outbound
-                    // input events. For now, keep conn for input sending
-                    // and spawn receive on a second connection... but that
-                    // requires two QUIC streams.
-                    //
-                    // Better approach: move conn into a combined task that
-                    // both receives frames AND accepts input via mpsc channel.
+                    // Create mpsc channel for outbound input events
+                    let (input_tx, input_rx) = mpsc::channel::<cntdesk_core::protocol::InputEvent>(32);
+                    self.input_tx = Some(input_tx);
+
                     let cancel = tokio_util::sync::CancellationToken::new();
                     self.cancel_token = Some(cancel.clone());
-                    self.active_conn = None; // moved into task
-                    spawn_viewer_combined_loop(conn, cancel);
+                    spawn_viewer_combined_loop(conn, input_rx, cancel);
                     Ok(())
                 }
                 Message::AuthResponse { success: false, .. } => {
@@ -201,10 +173,7 @@ impl ConnectionManager {
         if let Some(token) = self.cancel_token.take() {
             token.cancel();
         }
-        if let Some(mut conn) = self.active_conn.take() {
-            let msg = Message::Disconnect { reason: "user_requested".to_string() };
-            let _ = conn.send(&msg).await;
-        }
+        self.input_tx = None;
         self.state = ConnectionState::Disconnected;
         Ok(())
     }
@@ -257,7 +226,8 @@ impl ConnectionManager {
 
 // ─── Background data-plane tasks ────────────────────────────────────────────
 
-/// Host: capture screen → encode → send FrameMetadata + FrameData over QUIC.
+/// Host: capture screen → send raw BGRA FrameMetadata + FrameData over QUIC.
+/// Skips encoder entirely — sends raw pixels so viewer can render without x264.
 fn spawn_host_capture_loop(
     mut conn: Connection,
     cancel: tokio_util::sync::CancellationToken,
@@ -279,23 +249,8 @@ fn spawn_host_capture_loop(
             return;
         }
 
-        let encoder_config = cntdesk_core::encoder::EncoderConfig {
-            width: config.max_width,
-            height: config.max_height,
-            fps: config.target_fps,
-            bitrate_kbps: 2000,
-            keyframe_interval_ms: 2000,
-        };
-
-        let mut encoder = match cntdesk_core::encoder::create_encoder(&encoder_config) {
-            Ok(enc) => enc,
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to create encoder");
-                return;
-            }
-        };
-
         let frame_interval = Duration::from_millis(1000 / config.target_fps as u64);
+        let mut seq: u64 = 0;
 
         loop {
             tokio::select! {
@@ -308,35 +263,33 @@ fn spawn_host_capture_loop(
                         Ok(Some(frame)) => {
                             let width = frame.width;
                             let height = frame.height;
+                            let is_keyframe = seq % 30 == 0;
 
-                            match encoder.encode(&frame) {
-                                Ok(packet) => {
-                                    let meta = Message::FrameMetadata {
-                                        seq: packet.seq,
-                                        timestamp_us: packet.timestamp_us,
-                                        width: width as u16,
-                                        height: height as u16,
-                                        keyframe: packet.is_keyframe,
-                                    };
-                                    if let Err(e) = conn.send(&meta).await {
-                                        tracing::warn!(error = %e, "Failed to send frame metadata");
-                                        break;
-                                    }
-
-                                    let data_msg = Message::FrameData {
-                                        seq: packet.seq,
-                                        data: packet.data,
-                                        is_keyframe: packet.is_keyframe,
-                                    };
-                                    if let Err(e) = conn.send(&data_msg).await {
-                                        tracing::warn!(error = %e, "Failed to send frame data");
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::warn!(error = %e, "Encode failed");
-                                }
+                            // Send metadata first
+                            let meta = Message::FrameMetadata {
+                                seq,
+                                timestamp_us: frame.timestamp_us,
+                                width: width as u16,
+                                height: height as u16,
+                                keyframe: is_keyframe,
+                            };
+                            if let Err(e) = conn.send(&meta).await {
+                                tracing::warn!(error = %e, "Failed to send frame metadata");
+                                break;
                             }
+
+                            // Send raw BGRA pixel data (no encoding)
+                            let data_msg = Message::FrameData {
+                                seq,
+                                data: frame.data,
+                                is_keyframe,
+                            };
+                            if let Err(e) = conn.send(&data_msg).await {
+                                tracing::warn!(error = %e, "Failed to send frame data");
+                                break;
+                            }
+
+                            seq += 1;
                         }
                         Ok(None) => {} // screen unchanged
                         Err(e) => {
@@ -352,24 +305,25 @@ fn spawn_host_capture_loop(
     });
 }
 
-/// Viewer: receive frames from QUIC → push to FRAME_CHANNEL; also handle
-/// input injection messages from host (for when this node is acting as host
-/// receiving input from viewers — future use).
+/// Viewer: receive frames from QUIC → push to FRAME_CHANNEL; also send
+/// input events from mpsc channel → QUIC connection.
 fn spawn_viewer_combined_loop(
     mut conn: Connection,
+    mut input_rx: mpsc::Receiver<cntdesk_core::protocol::InputEvent>,
     cancel: tokio_util::sync::CancellationToken,
 ) {
     tokio::spawn(async move {
-        tracing::info!("Viewer receive loop started");
+        tracing::info!("Viewer combined loop started");
         let tx = &FRAME_CHANNEL.0;
         let mut pending_meta: Option<(u16, u16, bool)> = None;
 
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {
-                    tracing::info!("Viewer receive loop cancelled");
+                    tracing::info!("Viewer combined loop cancelled");
                     break;
                 }
+                // Receive frames from host
                 result = conn.recv() => {
                     match result {
                         Ok(Message::FrameMetadata { width, height, keyframe, .. }) => {
@@ -403,8 +357,15 @@ fn spawn_viewer_combined_loop(
                         }
                     }
                 }
+                // Send input events from frontend to host
+                Some(event) = input_rx.recv() => {
+                    if let Err(e) = conn.send(&Message::InputEvent(event)).await {
+                        tracing::warn!(error = %e, "Failed to send input event");
+                        break;
+                    }
+                }
             }
         }
-        tracing::info!("Viewer receive loop stopped");
+        tracing::info!("Viewer combined loop stopped");
     });
 }
