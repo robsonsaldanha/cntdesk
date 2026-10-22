@@ -8,14 +8,18 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  VCPKG_ROOT: C:\vcpkg
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Setup Visual Studio 2022
+        uses: microsoft/setup-msbuild@v2
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -28,6 +32,16 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+          C:\vcpkg\vcpkg integrate install
+
+      - name: Install vcpkg dependencies
+        run: |
+          C:\vcpkg\vcpkg install libvpx:x64-windows libyuv:x64-windows opus:x64-windows ffmpeg[x264]:x64-windows
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
@@ -42,6 +56,8 @@ jobs:
           flutter build windows --release
 
       - name: Build Rust binary
+        env:
+          VCPKG_ROOT: C:\vcpkg
         run: cargo build --release --features flutter
 
       - name: Package installer
@@ -50,7 +66,9 @@ jobs:
           $flutter_build = "flutter/build/windows/x64/runner/Release"
           New-Item -ItemType Directory -Force -Path "dist"
           Copy-Item $exe "dist/"
-          Copy-Item "$flutter_build/*" "dist/" -Recurse
+          if (Test-Path $flutter_build) {
+            Copy-Item "$flutter_build/*" "dist/" -Recurse
+          }
           Compress-Archive -Path "dist/*" -DestinationPath "CNT.Desk_${{ github.run_number }}_windows.zip"
 
       - name: Upload artifact
