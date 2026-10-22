@@ -121,7 +121,7 @@ export function ConnectionPanel() {
       case "pairing": return "PAREANDO";
       case "connected": return "CONECTADO";
       case "error": return "ERRO";
-      default: return state.toUpperCase();
+      default: return "DESCONHECIDO";
     }
   };
 
