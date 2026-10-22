@@ -111,8 +111,12 @@ impl ConnectionManager {
         let addr = self.server_addr.clone();
         let mut conn = self.connect_with_retry(&addr).await?;
 
+        // Send our own persisted device_id (if any) so the server can register
+        // us as a waiting host. If first time, send empty string and server
+        // will assign a new ID which we persist below.
+        let my_id = self.device_id.clone().unwrap_or_default();
         let msg = Message::AuthRequest {
-            id: String::new(), // empty = new registration
+            id: my_id,
             password_hash: keypair.public_key_bytes(),
         };
         conn.send(&msg).await.context("Failed to send registration request")?;

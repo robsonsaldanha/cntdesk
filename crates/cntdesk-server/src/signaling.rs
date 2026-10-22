@@ -152,6 +152,46 @@ impl SignalingService {
         self.pair_viewer_with_host(new_peer_id).await
     }
 
+    /// Pair a viewer with a specific target host (by host device ID).
+    /// Returns Some(session_id) if the target host is waiting, None otherwise.
+    pub async fn pair_viewer_with_specific_host(&self, viewer_id: &str, target_host_id: &str) -> Option<String> {
+        let hosts = self.waiting_hosts.read().await;
+        if !hosts.contains_key(target_host_id) {
+            warn!(viewer = %viewer_id, target = %target_host_id, "Target host not in waiting list");
+            return None;
+        }
+        drop(hosts);
+
+        // Check if a session already exists for this host
+        let peer_map = self.peer_to_session.read().await;
+        if let Some(existing_session) = peer_map.get(target_host_id) {
+            let session_id = existing_session.clone();
+            drop(peer_map);
+            let mut sessions = self.sessions.write().await;
+            if let Some(state) = sessions.get_mut(&session_id) {
+                state.viewers.insert(viewer_id.to_string());
+                state.pending_messages.insert(viewer_id.to_string(), VecDeque::new());
+                info!(session_id = %session_id, viewer = %viewer_id, "Viewer added to existing session");
+            }
+            drop(sessions);
+            let mut peer_map = self.peer_to_session.write().await;
+            peer_map.insert(viewer_id.to_string(), session_id.clone());
+            return Some(session_id);
+        }
+        drop(peer_map);
+
+        match self.create_session_multi(target_host_id, &[viewer_id]).await {
+            Ok(session_id) => {
+                info!(session_id = %session_id, viewer = %viewer_id, host = %target_host_id, "Viewer paired with specific host");
+                Some(session_id)
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to create session for specific host pairing");
+                None
+            }
+        }
+    }
+
     /// Create a new multi-viewer session. Returns session ID.
     pub async fn create_session_multi(&self, host_id: &str, viewer_ids: &[&str]) -> Result<String, String> {
         let now = SystemTime::now()

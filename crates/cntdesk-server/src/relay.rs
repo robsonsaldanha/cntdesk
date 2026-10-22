@@ -2,18 +2,14 @@
 //!
 //! One host can serve multiple concurrent viewers. Host frames are fanned out
 //! to all viewers; viewer input events are routed back to the host.
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-
 use tokio::sync::RwLock;
 use tracing::{info, warn, error};
-
 use cntdesk_core::crypto::KeyPair;
 use cntdesk_core::protocol::Message;
-use cntdesk_core::transport::{TlsConfig, Transport};
-
+use cntdesk_core::transport::{Transport};
 use crate::auth::AuthService;
 use crate::signaling::SignalingService;
 
@@ -57,6 +53,7 @@ impl PeerConnections {
         }
     }
 
+    #[allow(dead_code)]
     async fn get_session(&self, device_id: &str) -> Option<String> {
         let conns = self.connections.read().await;
         conns.get(device_id).and_then(|s| s.session_id.clone())
@@ -74,6 +71,7 @@ pub struct RelayService {
     transport: Transport,
     auth: AuthService,
     signaling: SignalingService,
+    #[allow(dead_code)]
     server_keypair: KeyPair,
     peers: PeerConnections,
 }
@@ -97,7 +95,6 @@ impl RelayService {
     /// Run the relay main loop: accept incoming QUIC connections and route messages.
     pub async fn run(&self) -> anyhow::Result<()> {
         info!("Relay service started, accepting connections...");
-
         loop {
             match self.transport.accept().await {
                 Ok(conn) => {
@@ -105,7 +102,6 @@ impl RelayService {
                     let auth = self.auth.clone();
                     let signaling = self.signaling.clone();
                     let peers = self.peers.clone();
-
                     tokio::spawn(async move {
                         if let Err(e) = handle_peer_connection(conn, auth, signaling, peers).await {
                             error!(error = %e, "Peer connection handler failed");
@@ -129,26 +125,86 @@ async fn handle_peer_connection(
 ) -> Result<(), String> {
     // First message should be AuthRequest
     let first_msg = conn.recv().await.map_err(|e| format!("Recv failed: {}", e))?;
-
     let (device_id, _session_token) = match first_msg {
         Message::AuthRequest { id, password_hash } => {
-            // Verify credentials
-            if !auth.verify_device_exists(&id) {
-                // Register new device with the client-provided ID
-                auth.register_device_with_id(&id, &password_hash)?;
+            // The `id` field carries either:
+            //   - The client's own device ID (when registering as host, or first-time empty)
+            //   - The target host's device ID (when connecting as viewer)
+            // The `password_hash` field carries either:
+            //   - The client's public key bytes (32 bytes, when registering)
+            //   - The password string bytes (when connecting as viewer)
+            //
+            // Heuristic: if password_hash is exactly 32 bytes → it's a public key → host registration
+            //            otherwise → it's a password → viewer attempting to connect to host `id`
+
+            let is_host_registration = password_hash.len() == 32;
+
+            if is_host_registration {
+                // Host registration flow
+                let my_id = if id.is_empty() {
+                    // First-time: generate new ID
+                    let new_id = auth.register_new_device(&password_hash)?;
+                    new_id
+                } else {
+                    // Returning host: register with provided ID if not exists
+                    if !auth.verify_device_exists(&id) {
+                        auth.register_device_with_id(&id, &password_hash)?;
+                    }
+                    id
+                };
+
+                // Generate session token
+                let token = auth.generate_session_token(&my_id)?;
+
+                // Send auth response
+                let response = Message::AuthResponse {
+                    success: true,
+                    session_token: Some(token.clone()),
+                };
+                conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
+
+                (my_id, token)
+            } else {
+                // Viewer connection flow: `id` is the target host, `password_hash` is the password
+                let target_host_id = id;
+                let password = String::from_utf8_lossy(&password_hash).to_string();
+
+                // Verify the target host exists and password matches
+                match auth.verify_password(&target_host_id, password.as_bytes()) {
+                    Ok(true) => {
+                        // Generate a temporary device ID for this viewer session
+                        let viewer_id = auth.register_new_device(&[0u8; 32])?;
+                        let token = auth.generate_session_token(&viewer_id)?;
+
+                        let response = Message::AuthResponse {
+                            success: true,
+                            session_token: Some(token.clone()),
+                        };
+                        conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
+
+                        // Return viewer_id as device_id, and encode target_host in token for later use
+                        // We'll use a special format: viewer_id + "|" + target_host_id
+                        let combined_id = format!("{}|{}", viewer_id, target_host_id);
+                        (combined_id, token)
+                    }
+                    Ok(false) => {
+                        let response = Message::AuthResponse {
+                            success: false,
+                            session_token: None,
+                        };
+                        conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
+                        return Err("Wrong password".to_string());
+                    }
+                    Err(e) => {
+                        let response = Message::AuthResponse {
+                            success: false,
+                            session_token: None,
+                        };
+                        conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
+                        return Err(format!("Auth error: {}", e));
+                    }
+                }
             }
-
-            // Generate session token signed by server keypair
-            let token = auth.generate_session_token(&id)?;
-
-            // Send auth response
-            let response = Message::AuthResponse {
-                success: true,
-                session_token: Some(token.clone()),
-            };
-            conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
-
-            (id, token)
         }
         _ => return Err("First message must be AuthRequest".to_string()),
     };
@@ -156,27 +212,27 @@ async fn handle_peer_connection(
     // Register peer
     peers.register(&device_id, "quic").await;
 
-    // Check if this is a host or viewer
-    let is_host = auth.is_host_device(&device_id).await;
+    // Determine role based on device_id format
+    if device_id.contains('|') {
+        // Viewer: device_id format is "viewer_id|target_host_id"
+        let parts: Vec<&str> = device_id.splitn(2, '|').collect();
+        let viewer_id = parts[0].to_string();
+        let target_host_id = parts[1].to_string();
 
-    if is_host {
-        // Host: wait for viewers to connect
-        signaling.register_waiting_host(&device_id).await;
-        info!(device_id = %device_id, "Host waiting for viewers");
+        info!(viewer_id = %viewer_id, target = %target_host_id, "Viewer attempting to connect to host");
 
-        // Run host message loop: broadcast frames to all connected viewers
-        run_host_loop(conn, device_id.clone(), signaling.clone()).await?;
-    } else {
-        // Viewer: try to pair with a waiting host
-        if let Some(session_id) = signaling.pair_viewer_with_host(&device_id).await {
+        if let Some(session_id) = signaling.pair_viewer_with_specific_host(&viewer_id, &target_host_id).await {
             peers.set_session(&device_id, &session_id).await;
-            info!(device_id = %device_id, session_id = %session_id, "Viewer paired with host");
-
-            // Run viewer message loop: receive frames, send input
-            run_viewer_loop(conn, device_id.clone(), session_id, signaling.clone()).await?;
+            info!(viewer_id = %viewer_id, session_id = %session_id, "Viewer paired with host");
+            run_viewer_loop(conn, viewer_id, session_id, signaling.clone()).await?;
         } else {
-            return Err("No waiting host available".to_string());
+            return Err(format!("Host '{}' not available", target_host_id));
         }
+    } else {
+        // Host: register as waiting and run host loop
+        signaling.register_waiting_host(&device_id).await;
+        info!(device_id = %device_id, "Host registered and waiting for viewers");
+        run_host_loop(conn, device_id.clone(), signaling.clone()).await?;
     }
 
     peers.unregister(&device_id).await;
@@ -189,7 +245,6 @@ async fn run_host_loop(
     signaling: SignalingService,
 ) -> Result<(), String> {
     info!(host_id = %host_id, "Running host loop");
-
     loop {
         match conn.recv().await {
             Ok(Message::Disconnect { reason }) => {
@@ -209,7 +264,6 @@ async fn run_host_loop(
             }
         }
     }
-
     Ok(())
 }
 
@@ -220,7 +274,6 @@ async fn run_viewer_loop(
     signaling: SignalingService,
 ) -> Result<(), String> {
     info!(viewer_id = %viewer_id, session_id = %session_id, "Running viewer loop");
-
     loop {
         // Check for pending messages from host
         let pending = signaling.get_pending_messages_for(&session_id, &viewer_id).await;
@@ -249,10 +302,8 @@ async fn run_viewer_loop(
                 // Timeout, continue loop
             }
         }
-
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-
     // Remove viewer from session
     signaling.remove_peer(&viewer_id).await;
     Ok(())
