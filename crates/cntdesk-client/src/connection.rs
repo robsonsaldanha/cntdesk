@@ -108,7 +108,8 @@ impl ConnectionManager {
     /// Register this client with the server, returning the assigned device ID.
     pub async fn register_with_server(&mut self) -> Result<String> {
         let keypair = self.auth.ensure_identity()?;
-        let mut conn = self.connect_with_retry(&self.server_addr).await?;
+        let addr = self.server_addr.clone();
+        let mut conn = self.connect_with_retry(&addr).await?;
 
         let msg = Message::AuthRequest {
             id: String::new(), // empty = new registration
@@ -138,7 +139,8 @@ impl ConnectionManager {
     /// Connect to a remote peer as a viewer.
     pub async fn connect_to_peer(&mut self, id: &str, password: &str) -> Result<()> {
         self.state = ConnectionState::Connecting;
-        let mut conn = self.connect_with_retry(&self.server_addr).await?;
+        let addr = self.server_addr.clone();
+        let mut conn = self.connect_with_retry(&addr).await?;
 
         let msg = Message::AuthRequest {
             id: id.to_string(),
