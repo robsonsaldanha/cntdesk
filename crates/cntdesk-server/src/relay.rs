@@ -181,37 +181,27 @@ async fn handle_peer_connection(
                     Err(_) => false,
                 };
                 if password_ok {
-                        // Generate a temporary device ID for this viewer session
-                        let viewer_id = auth.register_new_device(&[0u8; 32])?;
-                        let token = auth.generate_session_token(&viewer_id)?;
+                    // Generate a temporary device ID for this viewer session
+                    let viewer_id = auth.register_new_device(&[0u8; 32])?;
+                    let token = auth.generate_session_token(&viewer_id)?;
 
-                        let response = Message::AuthResponse {
-                            success: true,
-                            session_token: Some(token.clone()),
-                        };
-                        conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
+                    let response = Message::AuthResponse {
+                        success: true,
+                        session_token: Some(token.clone()),
+                    };
+                    conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
 
-                        // Return viewer_id as device_id, and encode target_host in token for later use
-                        // We'll use a special format: viewer_id + "|" + target_host_id
-                        let combined_id = format!("{}|{}", viewer_id, target_host_id);
-                        (combined_id, token)
-                    }
-                    Ok(false) => {
-                        let response = Message::AuthResponse {
-                            success: false,
-                            session_token: None,
-                        };
-                        conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
-                        return Err("Wrong password".to_string());
-                    }
-                    Err(e) => {
-                        let response = Message::AuthResponse {
-                            success: false,
-                            session_token: None,
-                        };
-                        conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
-                        return Err(format!("Auth error: {}", e));
-                    }
+                    // Encode viewer_id + target_host_id so the post-auth routing
+                    // block below can distinguish viewer from host
+                    let combined_id = format!("{}|{}", viewer_id, target_host_id);
+                    (combined_id, token)
+                } else {
+                    let response = Message::AuthResponse {
+                        success: false,
+                        session_token: None,
+                    };
+                    conn.send(&response).await.map_err(|e| format!("Send failed: {}", e))?;
+                    return Err("Wrong password or host not available".to_string());
                 }
             }
         }
