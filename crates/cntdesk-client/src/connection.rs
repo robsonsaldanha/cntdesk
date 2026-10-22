@@ -265,6 +265,15 @@ fn spawn_host_capture_loop(
                             let height = frame.height;
                             let is_keyframe = seq % 30 == 0;
 
+                            // Compress BGRA to JPEG (quality 75 for balance)
+                            let jpeg_data = match compress_bgra_to_jpeg(&frame.data, width, height, 75) {
+                                Ok(data) => data,
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "JPEG compression failed");
+                                    continue;
+                                }
+                            };
+
                             // Send metadata first
                             let meta = Message::FrameMetadata {
                                 seq,
@@ -278,10 +287,10 @@ fn spawn_host_capture_loop(
                                 break;
                             }
 
-                            // Send raw BGRA pixel data (no encoding)
+                            // Send compressed JPEG data
                             let data_msg = Message::FrameData {
                                 seq,
-                                data: frame.data,
+                                data: jpeg_data,
                                 is_keyframe,
                             };
                             if let Err(e) = conn.send(&data_msg).await {
@@ -368,4 +377,23 @@ fn spawn_viewer_combined_loop(
         }
         tracing::info!("Viewer combined loop stopped");
     });
+}
+
+/// Compress raw BGRA pixel data to JPEG format.
+fn compress_bgra_to_jpeg(bgra_data: &[u8], width: u32, height: u32, quality: u8) -> Result<Vec<u8>, String> {
+    use jpeg_encoder::{ColorType, Encoder};
+
+    // Convert BGRA to RGB (JPEG doesn't support alpha)
+    let rgb_data: Vec<u8> = bgra_data
+        .chunks_exact(4)
+        .flat_map(|pixel| [pixel[2], pixel[1], pixel[0]]) // BGR → RGB
+        .collect();
+
+    let mut jpeg_buffer = Vec::new();
+    let encoder = Encoder::new(&mut jpeg_buffer, quality);
+    encoder
+        .encode(&rgb_data, width as u16, height as u16, ColorType::Rgb)
+        .map_err(|e| format!("JPEG encode failed: {}", e))?;
+
+    Ok(jpeg_buffer)
 }

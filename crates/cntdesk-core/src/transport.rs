@@ -311,18 +311,21 @@ impl Transport {
 
 impl Connection {
     /// Send a message with length-prefixed framing.
+    /// Atomic write: length+payload concatenated in single buffer to prevent
+    /// stream desync where payload bytes get read as next length prefix.
     pub async fn send(&mut self, msg: &Message) -> Result<(), CoreError> {
         let payload = msg.serialize();
         let len = payload.len() as u32;
 
+        // Concatenate length prefix + payload into single buffer for atomic write
+        let mut buf = Vec::with_capacity(4 + payload.len());
+        buf.extend_from_slice(&len.to_be_bytes());
+        buf.extend_from_slice(&payload);
+
         self.send
-            .write_all(&len.to_be_bytes())
+            .write_all(&buf)
             .await
-            .map_err(|e| CoreError::Protocol(format!("send length prefix failed: {}", e)))?;
-        self.send
-            .write_all(&payload)
-            .await
-            .map_err(|e| CoreError::Protocol(format!("send payload failed: {}", e)))?;
+            .map_err(|e| CoreError::Protocol(format!("send failed: {}", e)))?;
         self.send
             .flush()
             .await

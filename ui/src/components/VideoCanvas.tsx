@@ -159,37 +159,51 @@ export function VideoCanvas({ onInput }: VideoCanvasProps) {
    * Otherwise uploads raw BGRA data directly as texture.
    */
   const processFrame = useCallback(
-    (data: Uint8Array, width: number, height: number, isKeyframe: boolean) => {
-      // v50+ sends raw BGRA pixels (not H.264 NAL units).
-      // Detect by size: raw BGRA = width * height * 4 bytes.
-      // H.264 packets are much smaller (compressed).
-      const expectedRawSize = width * height * 4;
-      const isRawBGRA = data.length === expectedRawSize;
+    async (data: Uint8Array, width: number, height: number, isKeyframe: boolean) => {
+      // v52+ sends JPEG compressed frames (~200KB instead of 8MB raw BGRA).
+      // Detect by checking for JPEG magic bytes (FF D8 FF).
+      const isJPEG = data.length >= 3 && data[0] === 0xFF && data[1] === 0xD8 && data[2] === 0xFF;
 
-      if (isRawBGRA) {
-        // Raw pixel data — upload directly, skip WebCodecs entirely
-        uploadRawFallback(data, width, height);
-      } else {
-        // Compressed data (H.264 NAL units) — use WebCodecs if available
-        const decoder = decoderRef.current;
-        if (decoder && decoder.state !== "closed") {
-          const chunk = new EncodedVideoChunk({
-            timestamp: performance.now() * 1000,
-            type: isKeyframe ? "key" : "delta",
-            data,
-          });
-          try {
-            decoder.decode(chunk);
-          } catch (e) {
-            console.warn("Decode failed, falling back to raw upload:", e);
-            uploadRawFallback(data, width, height);
+      if (isJPEG) {
+        // JPEG compressed data — decode via createImageBitmap and upload to texture
+        try {
+          const blob = new Blob([data], { type: "image/jpeg" });
+          const bitmap = await createImageBitmap(blob);
+          const gl = glRef.current;
+          const texture = textureRef.current;
+          if (gl && texture) {
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+            bitmap.close();
           }
-        } else {
+        } catch (e) {
+          console.warn("JPEG decode failed:", e);
+        }
+      } else {
+        // Fallback: raw BGRA or H.264
+        const expectedRawSize = width * height * 4;
+        const isRawBGRA = data.length === expectedRawSize;
+        if (isRawBGRA) {
           uploadRawFallback(data, width, height);
+        } else {
+          const decoder = decoderRef.current;
+          if (decoder && decoder.state !== "closed") {
+            const chunk = new EncodedVideoChunk({
+              timestamp: performance.now() * 1000,
+              type: isKeyframe ? "key" : "delta",
+              data,
+            });
+            try {
+              decoder.decode(chunk);
+            } catch (e) {
+              console.warn("Decode failed:", e);
+            }
+          }
         }
       }
     },
-    [uploadTexture],
+    [uploadRawFallback],
   );
 
   const uploadRawFallback = useCallback(
