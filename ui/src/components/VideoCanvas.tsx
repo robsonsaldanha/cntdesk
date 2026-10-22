@@ -58,7 +58,7 @@ export function VideoCanvas({ onInput }: VideoCanvasProps) {
       if (isJPEG) {
         try {
           // Cast Uint8Array to ArrayBuffer for Blob compatibility
-          const blob = new Blob([data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)], { type: "image/jpeg" });
+          const blob = new Blob([data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer], { type: "image/jpeg" });
           const bitmap = await createImageBitmap(blob);
           const gl = glRef.current;
           const texture = textureRef.current;
