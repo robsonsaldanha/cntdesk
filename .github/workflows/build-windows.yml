@@ -53,9 +53,7 @@ jobs:
         run: cargo install flutter_rust_bridge_codegen --version 1.82.6
 
       - name: Generate Flutter-Rust bridge code
-        run: |
-          cd flutter
-          flutter_rust_bridge_codegen generate
+        run: flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 
       - name: Build Flutter UI
         run: |
