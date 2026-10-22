@@ -26,13 +26,19 @@ impl AuthService {
     /// Register a new device with its public key. Returns generated ID.
     pub fn register_new_device(&self, public_key: &[u8]) -> Result<String, String> {
         let id = self.id_gen.generate();
+        self.register_device_with_id(&id, public_key)?;
+        Ok(id)
+    }
+
+    /// Register a new device with a specific ID (used when client provides its own ID).
+    pub fn register_device_with_id(&self, id: &str, public_key: &[u8]) -> Result<(), String> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
         let record = DeviceRecord {
-            id: id.clone(),
+            id: id.to_string(),
             public_key: public_key.to_vec(),
             password_hash: None,
             created_at: now,
@@ -42,7 +48,7 @@ impl AuthService {
             .register_device(&record)
             .map_err(|e| format!("Failed to register device: {}", e))?;
 
-        Ok(id)
+        Ok(())
     }
 
     /// Check if a device with the given ID exists.

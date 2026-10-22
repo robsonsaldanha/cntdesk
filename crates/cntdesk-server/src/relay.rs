@@ -134,8 +134,8 @@ async fn handle_peer_connection(
         Message::AuthRequest { id, password_hash } => {
             // Verify credentials
             if !auth.verify_device_exists(&id) {
-                // Register new device
-                auth.register_new_device(&password_hash)?;
+                // Register new device with the client-provided ID
+                auth.register_device_with_id(&id, &password_hash)?;
             }
 
             // Generate session token signed by server keypair
