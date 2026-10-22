@@ -214,7 +214,7 @@ impl ConnectionManager {
         if self.transport.is_none() {
             // Bind to ephemeral port for client-side QUIC endpoint (no server TLS needed)
             let transport = Transport::bind_client("0.0.0.0:0")
-            }).context("Failed to create QUIC transport endpoint")?;
+                .context("Failed to create QUIC transport endpoint")?;
             self.transport = Some(transport);
             tracing::info!("QUIC transport endpoint initialized for client");
         }
