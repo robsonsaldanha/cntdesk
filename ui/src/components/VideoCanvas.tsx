@@ -160,25 +160,33 @@ export function VideoCanvas({ onInput }: VideoCanvasProps) {
    */
   const processFrame = useCallback(
     (data: Uint8Array, width: number, height: number, isKeyframe: boolean) => {
-      const decoder = decoderRef.current;
+      // v50+ sends raw BGRA pixels (not H.264 NAL units).
+      // Detect by size: raw BGRA = width * height * 4 bytes.
+      // H.264 packets are much smaller (compressed).
+      const expectedRawSize = width * height * 4;
+      const isRawBGRA = data.length === expectedRawSize;
 
-      if (decoder && decoder.state !== "closed") {
-        // Feed H.264 NAL units to WebCodecs decoder
-        const chunk = new EncodedVideoChunk({
-          timestamp: performance.now() * 1000,
-          type: isKeyframe ? "key" : "delta",
-          data,
-        });
-
-        try {
-          decoder.decode(chunk);
-        } catch (e) {
-          console.warn("Decode failed, falling back to raw upload:", e);
+      if (isRawBGRA) {
+        // Raw pixel data — upload directly, skip WebCodecs entirely
+        uploadRawFallback(data, width, height);
+      } else {
+        // Compressed data (H.264 NAL units) — use WebCodecs if available
+        const decoder = decoderRef.current;
+        if (decoder && decoder.state !== "closed") {
+          const chunk = new EncodedVideoChunk({
+            timestamp: performance.now() * 1000,
+            type: isKeyframe ? "key" : "delta",
+            data,
+          });
+          try {
+            decoder.decode(chunk);
+          } catch (e) {
+            console.warn("Decode failed, falling back to raw upload:", e);
+            uploadRawFallback(data, width, height);
+          }
+        } else {
           uploadRawFallback(data, width, height);
         }
-      } else {
-        // Raw BGRA fallback
-        uploadRawFallback(data, width, height);
       }
     },
     [uploadTexture],

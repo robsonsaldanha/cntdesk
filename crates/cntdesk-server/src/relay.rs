@@ -245,23 +245,39 @@ async fn run_host_loop(
 ) -> Result<(), String> {
     info!(host_id = %host_id, "Running host loop");
     loop {
-        match conn.recv().await {
-            Ok(Message::Disconnect { reason }) => {
+        // Check for pending messages from viewers (input events) and send to host
+        if let Some(session_id) = signaling.get_session_for_peer(&host_id).await {
+            let pending = signaling.get_pending_messages_for(&session_id, &host_id).await;
+            for msg in pending {
+                if let Err(e) = conn.send(&msg).await {
+                    warn!(error = %e, host_id = %host_id, "Failed to send pending message to host");
+                    break;
+                }
+            }
+        }
+
+        // Receive frames from host and fan-out to viewers
+        match tokio::time::timeout(Duration::from_millis(50), conn.recv()).await {
+            Ok(Ok(Message::Disconnect { reason })) => {
                 info!(reason = %reason, "Host disconnecting");
                 break;
             }
-            Ok(msg) => {
+            Ok(Ok(msg)) => {
                 // Get session for this host
                 if let Some(session_id) = signaling.get_session_for_peer(&host_id).await {
                     // Fan-out message to all viewers in session
                     signaling.route_message_from(&session_id, &host_id, msg).await?;
                 }
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 warn!(error = %e, host_id = %host_id, "Host connection error");
                 break;
             }
+            Err(_) => {
+                // Timeout, continue loop to check pending messages
+            }
         }
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
     Ok(())
 }
