@@ -169,9 +169,18 @@ async fn handle_peer_connection(
                 let target_host_id = id;
                 let password = String::from_utf8_lossy(&password_hash).to_string();
 
-                // Verify the target host exists and password matches
-                match auth.verify_password(&target_host_id, password.as_bytes()) {
-                    Ok(true) => {
+                // Verify the target host exists and password matches.
+                // Dev mode: if host has no password set yet, allow any password so
+                // testers can connect without first clicking "Set Password".
+                let password_ok = match auth.verify_password(&target_host_id, password.as_bytes()) {
+                    Ok(valid) => valid,
+                    Err(e) if e.contains("No password set") => {
+                        tracing::warn!(host = %target_host_id, "Host has no password set — allowing dev-mode connection");
+                        true
+                    }
+                    Err(_) => false,
+                };
+                if password_ok {
                         // Generate a temporary device ID for this viewer session
                         let viewer_id = auth.register_new_device(&[0u8; 32])?;
                         let token = auth.generate_session_token(&viewer_id)?;
