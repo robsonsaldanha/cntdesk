@@ -41,7 +41,7 @@ jobs:
 
       - name: Install vcpkg dependencies
         run: |
-          C:\vcpkg\vcpkg install libvpx:x64-windows libyuv:x64-windows opus:x64-windows ffmpeg[x264]:x64-windows
+          C:\vcpkg\vcpkg install --classic libvpx:x64-windows libyuv:x64-windows opus:x64-windows ffmpeg[x264]:x64-windows
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
