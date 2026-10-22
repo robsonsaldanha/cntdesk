@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use cntdesk_core::protocol::{InputEvent, Message};
+use cntdesk_core::protocol::InputEvent;
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -92,9 +92,7 @@ pub async fn send_input(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut cm = state.connection_manager.lock().await;
-    let session = cm.active_session()
-        .ok_or_else(|| "Not connected: no active session".to_string())?;
-    session.send(&Message::InputEvent(event))
+    cm.send_input(event)
         .await
         .map_err(|e| format!("Failed to send input event: {}", e))?;
     Ok(())

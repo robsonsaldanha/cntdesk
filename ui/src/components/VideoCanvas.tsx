@@ -205,16 +205,29 @@ export function VideoCanvas({ onInput }: VideoCanvasProps) {
     [uploadTexture],
   );
 
-  // Expose processFrame to parent via ref or IPC callback
+  // Listen for Tauri "cntdesk-frame" events carrying raw frame data
   useEffect(() => {
-    // Register global handler for incoming frame data from Tauri IPC
-    const handler = (event: CustomEvent<{ data: Uint8Array; width: number; height: number; isKeyframe: boolean }>) => {
-      processFrame(event.detail.data, event.detail.width, event.detail.height, event.detail.isKeyframe);
-    };
+    let unlisten: (() => void) | null = null;
 
-    window.addEventListener("cntdesk-frame" as string, handler as EventListener);
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen<{
+          data: number[];
+          width: number;
+          height: number;
+          isKeyframe: boolean;
+        }>("cntdesk-frame", (event) => {
+          const { data, width, height, isKeyframe } = event.payload;
+          processFrame(new Uint8Array(data), width, height, isKeyframe);
+        });
+      } catch (e) {
+        console.warn("Tauri event listener init failed:", e);
+      }
+    })();
+
     return () => {
-      window.removeEventListener("cntdesk-frame" as string, handler as EventListener);
+      unlisten?.();
     };
   }, [processFrame]);
 
