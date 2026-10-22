@@ -207,15 +207,30 @@ impl ConnectionManager {
         Ok(())
     }
 
+    /// Ensure transport is initialized (lazy init on first connect).
+    fn ensure_transport(&mut self) -> Result<()> {
+        if self.transport.is_none() {
+            // Bind to ephemeral port for client-side QUIC endpoint
+            let transport = Transport::bind("0.0.0.0:0", &TlsConfig {
+                server_cert: vec![],
+                server_key: vec![],
+                client_ca: None,
+            }).context("Failed to create QUIC transport endpoint")?;
+            self.transport = Some(transport);
+            tracing::info!("QUIC transport endpoint initialized for client");
+        }
+        Ok(())
+    }
+
     /// Connect with exponential backoff retry (max 30s).
-    async fn connect_with_retry(&self, addr: &str) -> Result<Connection> {
-        let transport = self.transport.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Transport not available (test mode)"))?;
+    async fn connect_with_retry(&mut self, addr: &str) -> Result<Connection> {
+        self.ensure_transport()?;
+        let transport = self.transport.as_ref().unwrap();
         let mut delay = Duration::from_millis(500);
         let max_delay = Duration::from_secs(30);
         let max_attempts = 10;
 
-        // Phase 0: placeholder TLS config for outbound connections.
+        // Client TLS config: no client cert, accept any server cert (self-signed)
         let tls_config = TlsConfig {
             server_cert: vec![],
             server_key: vec![],
