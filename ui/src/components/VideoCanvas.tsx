@@ -6,8 +6,9 @@ interface VideoCanvasProps {
 }
 
 /**
- * VideoCanvas with H.264 decoding via WebCodecs API.
- * Falls back to raw BGRA texture upload when WebCodecs is unavailable.
+ * VideoCanvas — renders remote desktop frames.
+ * v52+: JPEG compressed frames decoded via createImageBitmap.
+ * Fallback: raw BGRA texture upload or WebCodecs H.264 decoder.
  */
 export function VideoCanvas({ onInput }: VideoCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -16,133 +17,6 @@ export function VideoCanvas({ onInput }: VideoCanvasProps) {
   const programRef = useRef<WebGLProgram | null>(null);
   const decoderRef = useRef<VideoDecoder | null>(null);
   const frameBufferRef = useRef<Uint8Array | null>(null);
-
-  // Initialize WebGL context and shaders
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const gl = canvas.getContext("webgl", { alpha: false, antialias: false });
-    if (!gl) return;
-    glRef.current = gl;
-
-    // Vertex shader
-    const vsSource = `
-      attribute vec2 a_position;
-      attribute vec2 a_texCoord;
-      varying vec2 v_texCoord;
-      void main() {
-        gl_Position = vec4(a_position, 0.0, 1.0);
-        v_texCoord = a_texCoord;
-      }
-    `;
-
-    // Fragment shader for YUV→RGB conversion (WebCodecs outputs I420)
-    const fsSource = `
-      precision mediump float;
-      varying vec2 v_texCoord;
-      uniform sampler2D u_texture;
-      void main() {
-        gl_FragColor = texture2D(u_texture, v_texCoord);
-      }
-    `;
-
-    const vs = gl.createShader(gl.VERTEX_SHADER)!;
-    gl.shaderSource(vs, vsSource);
-    gl.compileShader(vs);
-
-    const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
-    gl.shaderSource(fs, fsSource);
-    gl.compileShader(fs);
-
-    const program = gl.createProgram()!;
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    gl.useProgram(program);
-    programRef.current = program;
-
-    // Full-screen quad
-    const positions = new Float32Array([
-      -1, -1,  1, -1, -1,  1,
-      -1,  1,  1, -1,  1,  1,
-    ]);
-    const texCoords = new Float32Array([
-      0, 1, 1, 1, 0, 0,
-      0, 0, 1, 1, 1, 0,
-    ]);
-
-    const posBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-    const posLoc = gl.getAttribLocation(program, "a_position");
-    gl.enableVertexAttribArray(posLoc);
-    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-    const texBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, texBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
-    const texLoc = gl.getAttribLocation(program, "a_texCoord");
-    gl.enableVertexAttribArray(texLoc);
-    gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
-
-    // Create texture
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    textureRef.current = texture;
-
-    // Initialize WebCodecs decoder if available
-    if ("VideoDecoder" in window) {
-      try {
-        const decoder = new VideoDecoder({
-          output: (frame: VideoFrame) => {
-            // Copy decoded frame to buffer for texture upload
-            const width = frame.displayWidth;
-            const height = frame.displayHeight;
-            const bufSize = width * height * 4;
-
-            if (!frameBufferRef.current || frameBufferRef.current.length !== bufSize) {
-              frameBufferRef.current = new Uint8Array(bufSize);
-            }
-
-            // Copy RGBA data from VideoFrame
-            frame.copyTo(frameBufferRef.current, { format: "RGBA" }).then(() => {
-              uploadTexture(gl, texture!, frameBufferRef.current!, width, height);
-              gl.drawArrays(gl.TRIANGLES, 0, 6);
-              frame.close();
-            }).catch((err: unknown) => {
-              console.warn("Frame copy failed:", err);
-              frame.close();
-            });
-          },
-          error: (err: DOMException) => {
-            console.error("VideoDecoder error:", err.message);
-          },
-        });
-
-        decoder.configure({
-          codec: "avc1.42E01E", // H.264 Baseline Level 3.0
-          optimizeForLatency: true,
-        });
-
-        decoderRef.current = decoder;
-        console.info("WebCodecs H.264 decoder initialized");
-      } catch (e) {
-        console.warn("WebCodecs init failed, using raw BGRA fallback:", e);
-      }
-    } else {
-      console.info("WebCodecs not available, using raw BGRA fallback");
-    }
-
-    return () => {
-      decoderRef.current?.close();
-      decoderRef.current = null;
-    };
-  }, []);
 
   // Upload BGRA/RGBA data to WebGL texture
   const uploadTexture = useCallback(
@@ -153,11 +27,28 @@ export function VideoCanvas({ onInput }: VideoCanvasProps) {
     [],
   );
 
-  /**
-   * Process incoming frame data from the relay.
-   * If WebCodecs decoder is active, feeds NAL units to it.
-   * Otherwise uploads raw BGRA data directly as texture.
-   */
+  // Raw BGRA fallback: swizzle BGRA→RGBA on CPU, upload to texture
+  const uploadRawFallback = useCallback(
+    (data: Uint8Array, width: number, height: number) => {
+      const gl = glRef.current;
+      const texture = textureRef.current;
+      if (!gl || !texture) return;
+
+      const rgba = new Uint8Array(data.length);
+      for (let i = 0; i < data.length; i += 4) {
+        rgba[i] = data[i + 2];     // R ← B
+        rgba[i + 1] = data[i + 1]; // G ← G
+        rgba[i + 2] = data[i];     // B ← R
+        rgba[i + 3] = data[i + 3]; // A ← A
+      }
+
+      uploadTexture(gl, texture, rgba, width, height);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    },
+    [uploadTexture],
+  );
+
+  // Process incoming frame data
   const processFrame = useCallback(
     async (data: Uint8Array, width: number, height: number, isKeyframe: boolean) => {
       // v52+ sends JPEG compressed frames (~200KB instead of 8MB raw BGRA).
@@ -165,9 +56,9 @@ export function VideoCanvas({ onInput }: VideoCanvasProps) {
       const isJPEG = data.length >= 3 && data[0] === 0xFF && data[1] === 0xD8 && data[2] === 0xFF;
 
       if (isJPEG) {
-        // JPEG compressed data — decode via createImageBitmap and upload to texture
         try {
-          const blob = new Blob([data], { type: "image/jpeg" });
+          // Cast Uint8Array to ArrayBuffer for Blob compatibility
+          const blob = new Blob([data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)], { type: "image/jpeg" });
           const bitmap = await createImageBitmap(blob);
           const gl = glRef.current;
           const texture = textureRef.current;
@@ -206,28 +97,128 @@ export function VideoCanvas({ onInput }: VideoCanvasProps) {
     [uploadRawFallback],
   );
 
-  const uploadRawFallback = useCallback(
-    (data: Uint8Array, width: number, height: number) => {
-      const gl = glRef.current;
-      const texture = textureRef.current;
-      if (!gl || !texture) return;
+  // Initialize WebGL context and shaders
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-      // BGRA → RGBA swizzle on CPU (WebGL doesn't support BGRA natively everywhere)
-      const rgba = new Uint8Array(data.length);
-      for (let i = 0; i < data.length; i += 4) {
-        rgba[i] = data[i + 2];     // R ← B
-        rgba[i + 1] = data[i + 1]; // G ← G
-        rgba[i + 2] = data[i];     // B ← R
-        rgba[i + 3] = data[i + 3]; // A ← A
+    const gl = canvas.getContext("webgl", { alpha: false, antialias: false });
+    if (!gl) return;
+    glRef.current = gl;
+
+    const vsSource = `
+      attribute vec2 a_position;
+      attribute vec2 a_texCoord;
+      varying vec2 v_texCoord;
+      void main() {
+        gl_Position = vec4(a_position, 0.0, 1.0);
+        v_texCoord = a_texCoord;
       }
+    `;
 
-      uploadTexture(gl, texture, rgba, width, height);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-    },
-    [uploadTexture],
-  );
+    const fsSource = `
+      precision mediump float;
+      varying vec2 v_texCoord;
+      uniform sampler2D u_texture;
+      void main() {
+        gl_FragColor = texture2D(u_texture, v_texCoord);
+      }
+    `;
 
-  // Listen for Tauri "cntdesk-frame" events carrying raw frame data
+    const vs = gl.createShader(gl.VERTEX_SHADER)!;
+    gl.shaderSource(vs, vsSource);
+    gl.compileShader(vs);
+
+    const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
+    gl.shaderSource(fs, fsSource);
+    gl.compileShader(fs);
+
+    const program = gl.createProgram()!;
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    gl.useProgram(program);
+    programRef.current = program;
+
+    const positions = new Float32Array([
+      -1, -1,  1, -1, -1,  1,
+      -1,  1,  1, -1,  1,  1,
+    ]);
+    const texCoords = new Float32Array([
+      0, 1, 1, 1, 0, 0,
+      0, 0, 1, 1, 1, 0,
+    ]);
+
+    const posBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    const posLoc = gl.getAttribLocation(program, "a_position");
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+    const texBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+    const texLoc = gl.getAttribLocation(program, "a_texCoord");
+    gl.enableVertexAttribArray(texLoc);
+    gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
+
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    textureRef.current = texture;
+
+    // Initialize WebCodecs decoder if available
+    if ("VideoDecoder" in window) {
+      try {
+        const decoder = new VideoDecoder({
+          output: (frame: VideoFrame) => {
+            const w = frame.displayWidth;
+            const h = frame.displayHeight;
+            const bufSize = w * h * 4;
+
+            if (!frameBufferRef.current || frameBufferRef.current.length !== bufSize) {
+              frameBufferRef.current = new Uint8Array(bufSize);
+            }
+
+            frame.copyTo(frameBufferRef.current!, { format: "RGBA" }).then(() => {
+              uploadTexture(gl, texture!, frameBufferRef.current!, w, h);
+              gl.drawArrays(gl.TRIANGLES, 0, 6);
+              frame.close();
+            }).catch((err: unknown) => {
+              console.warn("Frame copy failed:", err);
+              frame.close();
+            });
+          },
+          error: (err: DOMException) => {
+            console.error("VideoDecoder error:", err.message);
+          },
+        });
+
+        decoder.configure({
+          codec: "avc1.42E01E",
+          optimizeForLatency: true,
+        });
+
+        decoderRef.current = decoder;
+        console.info("WebCodecs H.264 decoder initialized");
+      } catch (e) {
+        console.warn("WebCodecs init failed, using fallback:", e);
+      }
+    } else {
+      console.info("WebCodecs not available, using fallback");
+    }
+
+    return () => {
+      decoderRef.current?.close();
+      decoderRef.current = null;
+    };
+  }, [uploadTexture]);
+
+  // Listen for Tauri "cntdesk-frame" events
   useEffect(() => {
     let unlisten: (() => void) | null = null;
 
