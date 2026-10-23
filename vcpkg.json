@@ -61,7 +61,6 @@
     },
     {
       "name": "ffmpeg",
-      "host": true,
       "features": [
         {
           "name": "amf",
@@ -75,13 +74,7 @@
           "name": "qsv",
           "platform": "(windows & !arm & static)"
         }
-      ],
-      "platform": "((windows | (linux & !arm32) | osx) & static)"
-    },
-    {
-      "name": "ffmpeg",
-      "host": false,
-      "platform": "((android | ios | (linux & arm32)) & static)"
+      ]
     }
   ],
   "vcpkg-configuration": {
