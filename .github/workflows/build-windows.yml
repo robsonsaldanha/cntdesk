@@ -58,7 +58,7 @@ jobs:
 
       - name: Build using RustDesk build.py
         env:
-          VCPKG_ROOT: C:\vcpkg\installed\x64-windows-static
+          VCPKG_ROOT: C:\vcpkg
         run: |
           python build.py --flutter --hwcodec
 
