@@ -169,7 +169,7 @@ piet-coregraphics = "0.6"
 foreign-types = "0.3"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
-tray-icon = { git = "https://github.com/tauri-apps/tray-icon", tag = "v0.21.3" }
+tray-icon = { git = "https://github.com/tauri-apps/tray-icon", rev = "0a5835b0e6828e37a1f781de9c2d671ae7a939e6" }
 tao = { git = "https://github.com/rustdesk-org/tao", branch = "dev" }
 image = "0.24"
 
