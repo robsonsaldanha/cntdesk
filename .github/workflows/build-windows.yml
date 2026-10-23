@@ -38,9 +38,9 @@ jobs:
           C:\vcpkg\bootstrap-vcpkg.bat
           C:\vcpkg\vcpkg integrate install
 
-      - name: Install vcpkg dependencies
+      - name: Install vcpkg dependencies (manifest mode)
         run: |
-          C:\vcpkg\vcpkg install --classic --triplet x64-windows-static libvpx libyuv opus aom ffmpeg[x264]
+          C:\vcpkg\vcpkg install --triplet x64-windows-static --x-install-root=C:\vcpkg\installed
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
