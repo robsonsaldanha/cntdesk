@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1. Відкрийте чат з @BotFather.\n2. Надішліть команду \"/newbot\". Ви отримаєте токен.\n3. Почніть чат з вашим щойно створеним ботом. Щоб активувати його, надішліть повідомлення, що починається зі скісної риски (\"/\"), наприклад \"/hello\".\n"),
         ("cancel-2fa-confirm-tip", "Ви впевнені, що хочете скасувати код двофакторної автентифікації?"),
         ("cancel-bot-confirm-tip", "Ви впевнені, що хочете скасувати Telegram бота?"),
-        ("About RustDesk", "Про Rustdesk"),
+        ("About CNT Desk", "Про Rustdesk"),
         ("Send clipboard keystrokes", "Надіслати вміст буфера обміну"),
         ("network_error_tip", "Будь ласка, перевірте ваше підключення до мережі та натисніть \"Повторити\""),
         ("Unlock with PIN", "Розблокування PIN-кодом"),

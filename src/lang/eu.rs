@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1, Ireki txat bat @BotFather bot-arekin.\n2, Bidali \"/newbot\" agindua. Token bat jasoko duzu urrats honen ostean.\n3, Hasi txat bat zure bot berriarekin. Bidali mezu bat aurreko barra batekin (\"/\") \"/kaixo\" bezala gaitzeko.\n"),
         ("cancel-2fa-confirm-tip", "Ziur 2FA bertan behera utzi nahi duzula?"),
         ("cancel-bot-confirm-tip", "Ziur Telegram bota bertan behera utzi nahi duzula?"),
-        ("About RustDesk", "RustDesk-i buruz"),
+        ("About CNT Desk", "RustDesk-i buruz"),
         ("Send clipboard keystrokes", "Bidali arbelaren tekla-sakatzeak"),
         ("network_error_tip", "Egiaztatu zure sareko konexioa eta egin klik berriz saiatzeko."),
         ("Unlock with PIN", "Desblokeatu PINarekin"),

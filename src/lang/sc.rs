@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1. aberi una tzarrada cun @BotFather.\n2. Inbia su cumandu \"/newbot\", a pustis de àere fatu custu passàgiu as a retzire unu getone.\n3. Incumintza una tzarrada cun su bot tuo creadu como. Imbia unu messàgiu chi incumintzat cun un'istanga (\"/\") a tipu \"/salude\".\n"),
         ("cancel-2fa-confirm-tip", "Ses seguru de bòlere annullare sa 2FA?"),
         ("cancel-bot-confirm-tip", "Ses seguru de bòlere annullare Telegram?"),
-        ("About RustDesk", "Informatziones subra de RustDesk"),
+        ("About CNT Desk", "Informatziones subra de RustDesk"),
         ("Send clipboard keystrokes", "Imbia fileras teclas puntas de billete"),
         ("network_error_tip", "Controlla sa connessione de rete, e a pustis seletziona 'Torra a proare'."),
         ("Unlock with PIN", "Abìlita s'isblocu cun PIN"),

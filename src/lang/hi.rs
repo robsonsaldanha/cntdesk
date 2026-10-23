@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "निर्देशों के लिए हमारे टेलीग्राम बोट को देखें।"),
         ("cancel-2fa-confirm-tip", "क्या आप वाकई 2FA रद्द करना चाहते हैं?"),
         ("cancel-bot-confirm-tip", "क्या आप वाकई बोट रद्द करना चाहते हैं?"),
-        ("About RustDesk", "RustDesk के बारे में"),
+        ("About CNT Desk", "RustDesk के बारे में"),
         ("Send clipboard keystrokes", "क्लिपबोर्ड कीस्ट्रोक्स भेजें"),
         ("network_error_tip", "नेटवर्क कनेक्शन त्रुटि, कृपया पुनः प्रयास करें।"),
         ("Unlock with PIN", "PIN से अनलॉक करें"),

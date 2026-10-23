@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1. Ava vestlus kasutajaga @BotFather.\n2. Saada käsklus \"/newbot\". Pärast selle sammu lõpetamist saad tokeni.\n3. Alusta vestlust oma uue loodud botiga. Saada sõnum, mis algab kaldkriipsuga (\"/\") nagu \"/hello\", et see aktiveerida.\n"),
         ("cancel-2fa-confirm-tip", "Kas oled kindel, et soovid 2FA tühistada?"),
         ("cancel-bot-confirm-tip", "Kas oled kindel, et soovid Telegrami boti tühistada?"),
-        ("About RustDesk", "RustDeski teave"),
+        ("About CNT Desk", "RustDeski teave"),
         ("Send clipboard keystrokes", "Saada lõikelaua klahvivajutused"),
         ("network_error_tip", "Palun kontrolli oma võrguühendust ja seejärel klõpsa nuppu \"Proovi uuesti\"."),
         ("Unlock with PIN", "Ava PIN-koodiga"),

@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1. Malfermu babilon kun @BotFather.\n2. Sendu la komandon \"/newbot\". Vi ricevos ĵetonon post plenumi ĉi tiun paŝon.\n3. Komencu babilon kun via nove kreita roboto. Sendu mesaĝon komenciĝantan per oblikva streko (\"/\") kiel \"/hello\" por aktivigi ĝin.\n"),
         ("cancel-2fa-confirm-tip", "Ĉu vi certas ke vi volas nuligi 2FA?"),
         ("cancel-bot-confirm-tip", "Ĉu vi certas ke vi volas nuligi la Telegram-roboton?"),
-        ("About RustDesk", "Pri RustDesk"),
+        ("About CNT Desk", "Pri RustDesk"),
         ("Send clipboard keystrokes", "Sendi poŝajn klavpremojn"),
         ("network_error_tip", "Bonvolu kontroli vian retkonekton, poste alklaku reprovi."),
         ("Unlock with PIN", "Malŝlosi per PIN"),

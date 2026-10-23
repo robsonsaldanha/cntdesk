@@ -1,4 +1,4 @@
-﻿lazy_static::lazy_static! {
+lazy_static::lazy_static! {
 pub static ref T: std::collections::HashMap<&'static str, &'static str> =
     [
         ("Status", "حالت"),
@@ -608,7 +608,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1. @BotFather کے ساتھ چیٹ کھولیں۔\n2. کمانڈ \"/newbot\" بھیجیں۔ یہ مرحلہ مکمل کرنے کے بعد آپ کو ایک ٹوکن ملے گا۔\n3. اپنے نئے بنائے گئے بوٹ کے ساتھ چیٹ شروع کریں۔ اسے فعال کرنے کے لیے فارورڈ سلیش (\"/\") سے شروع ہونے والا پیغام، جیسے \"/hello\"، بھیجیں۔\n"),
         ("cancel-2fa-confirm-tip", "کیا آپ واقعی 2FA منسوخ کرنا چاہتے ہیں؟"),
         ("cancel-bot-confirm-tip", "کیا آپ واقعی Telegram بوٹ منسوخ کرنا چاہتے ہیں؟"),
-        ("About RustDesk", "رستڈیسک کے بارے میں"),
+        ("About CNT Desk", "رستڈیسک کے بارے میں"),
         ("Send clipboard keystrokes", "کلپ بورڈ کی چابیاں بھیجیں"),
         ("network_error_tip", "براہِ کرم اپنا نیٹ ورک کنکشن جانچیں، پھر دوبارہ کوشش پر کلک کریں۔"),
         ("Unlock with PIN", "PIN کے ساتھ انلاک کریں"),

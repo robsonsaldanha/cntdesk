@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "RustDesk Telegram போட் ஆதரிக்கிறது"),
         ("cancel-2fa-confirm-tip", "2fa_ரத்து_உறுதி_குறிப்பு"),
         ("cancel-bot-confirm-tip", "போட்_ரத்து_உறுதி_குறிப்பு"),
-        ("About RustDesk", "RustDesk பற்றி"),
+        ("About CNT Desk", "RustDesk பற்றி"),
         ("Send clipboard keystrokes", "கிளிப்போர்டு விசைத்தள உள்ளீடு அனுப்பு"),
         ("network_error_tip", "நெட்வொர்க்_பிழை_குறிப்பு"),
         ("Unlock with PIN", "PIN உடன் திற"),

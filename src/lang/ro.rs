@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "Configurează un bot Telegram pentru notificări RustDesk. Introdu token-ul botului și ID-ul chat-ului."),
         ("cancel-2fa-confirm-tip", "Sigur vrei să dezactivezi autentificarea în doi pași? Aceasta va reduce securitatea contului tău."),
         ("cancel-bot-confirm-tip", "Sigur vrei să dezactivezi botul Telegram?"),
-        ("About RustDesk", "Despre RustDesk"),
+        ("About CNT Desk", "Despre RustDesk"),
         ("Send clipboard keystrokes", "Trimite conținutul clipboard-ului ca apăsări de taste"),
         ("network_error_tip", "Eroare de rețea. Verifică conexiunea la internet și încearcă din nou."),
         ("Unlock with PIN", "Deblochează cu PIN"),

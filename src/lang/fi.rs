@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "Mahdollistaa ilmoitukset ja etätoiminnot Telegramin kautta."),
         ("cancel-2fa-confirm-tip", "Haluatko varmasti poistaa kaksivaiheisen todennuksen käytöstä?"),
         ("cancel-bot-confirm-tip", "Haluatko varmasti poistaa Telegram-botin käytöstä?"),
-        ("About RustDesk", "Tietoa RustDeskistä"),
+        ("About CNT Desk", "Tietoa RustDeskistä"),
         ("Send clipboard keystrokes", "Lähetä leikepöydän näppäinsyötteet"),
         ("network_error_tip", "Verkkovirhe – tarkista yhteys ja yritä uudelleen."),
         ("Unlock with PIN", "Avaa PIN-koodilla"),

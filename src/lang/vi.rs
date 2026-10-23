@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "Liên kết với Telegram Bot của bạn."),
         ("cancel-2fa-confirm-tip", "Xác nhận tắt 2FA?"),
         ("cancel-bot-confirm-tip", "Xác nhận tắt Bot?"),
-        ("About RustDesk", "Về RustDesk"),
+        ("About CNT Desk", "Về RustDesk"),
         ("Send clipboard keystrokes", "Gửi phím từ Clipboard"),
         ("network_error_tip", "Lỗi mạng, vui lòng kiểm tra lại."),
         ("Unlock with PIN", "Mở khóa bằng mã PIN"),

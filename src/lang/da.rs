@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1. Åbn en chat med @BotFather.\n2. Send kommandoen \"/newbot\". Du vil modtage en nøgle efter at have gennemført dette trin.\n3. Start en chat med din nyoprettede bot. Send en besked som begynder med skråstreg \"/\", som fx \"/hello\", for at aktivere den.\n"),
         ("cancel-2fa-confirm-tip", "Er du sikker på at du vil afbryde to-faktorgodkendelse?"),
         ("cancel-bot-confirm-tip", "Er du sikker på at du vil afbryde Telegram-robotten?"),
-        ("About RustDesk", "Om RustDesk"),
+        ("About CNT Desk", "Om RustDesk"),
         ("Send clipboard keystrokes", "Send udklipsholder-tastetryk"),
         ("network_error_tip", "Tjek venligst din internetforbindelse, og forsøg igen."),
         ("Unlock with PIN", "Lås op med PIN"),

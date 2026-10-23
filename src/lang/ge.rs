@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1) გახსენით ჩატი @BotFather-თან.\n2) გაგზავნეთ ბრძანება \"/newbot\". ამ ნაბიჯის შესრულების შემდეგ მიიღებთ ტოკენს.\n3) დაიწყეთ ჩატი თქვენს ახლად შექმნილ ბოტთან. გაგზავნეთ შეტყობინება, რომელიც იწყება დახრილი ხაზით (\"/\"), მაგალითად, \"/hello\", მის გასააქტიურებლად.\n"),
         ("cancel-2fa-confirm-tip", "გამოვრთოთ ორფაქტორიანი ავთენტიფიკაცია?"),
         ("cancel-bot-confirm-tip", "გამოვრთოთ Telegram ბოტი?"),
-        ("About RustDesk", "RustDesk-ის შესახებ"),
+        ("About CNT Desk", "RustDesk-ის შესახებ"),
         ("Send clipboard keystrokes", "გაცვლის ბუფერიდან კლავიშების დაჭერის გაგზავნა"),
         ("network_error_tip", "შეამოწმეთ ქსელთან კავშირი, შემდეგ დააჭირეთ \"განმეორება\"."),
         ("Unlock with PIN", "PIN-კოდით განბლოკვა"),

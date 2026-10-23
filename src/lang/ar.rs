@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "يمكنك استخدام بوت تيليجرام للتحكم في الجلسات."),
         ("cancel-2fa-confirm-tip", "إلغاء تأكيد التحقق الثنائي."),
         ("cancel-bot-confirm-tip", "إلغاء تأكيد بوت تيليجرام."),
-        ("About RustDesk", "حول RustDesk"),
+        ("About CNT Desk", "حول RustDesk"),
         ("Send clipboard keystrokes", "إرسال ضغطات المفاتيح من الحافظة"),
         ("network_error_tip", "خطأ في الشبكة، يرجى المحاولة لاحقًا."),
         ("Unlock with PIN", "فتح باستخدام الرقم السري"),

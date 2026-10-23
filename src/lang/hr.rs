@@ -607,7 +607,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("enable-bot-desc", "1. Otvorite razgovor s @BotFather.\n2. Pošaljite naredbu \"/newbot\". Nakon dovršetka ovog koraka primit ćete token.\n3. Započnite razgovor s novostvorenim botom. Pošaljite poruku koja počinje kosom crtom (\"/\"), poput \"/hello\", kako biste ga aktivirali.\n"),
         ("cancel-2fa-confirm-tip", "Jeste li sigurni da želite otkazati 2FA?"),
         ("cancel-bot-confirm-tip", "Jeste li sigurni da želite otkazati Telegram bota?"),
-        ("About RustDesk", "O RustDesku"),
+        ("About CNT Desk", "O RustDesku"),
         ("Send clipboard keystrokes", "Pošalji pritiske tipki iz međuspremnika"),
         ("network_error_tip", "Provjerite svoju mrežnu vezu, a zatim kliknite Pokušaj ponovno."),
         ("Unlock with PIN", "Otključaj PIN-om"),
