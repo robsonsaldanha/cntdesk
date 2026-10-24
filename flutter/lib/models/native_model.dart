@@ -49,7 +49,7 @@ class PlatformFFI {
   // _homeDir is only needed for Android and IOS.
   String _homeDir = '';
   final _eventHandlers = <String, Map<String, HandleEvent>>{};
-  late Cntdesk _ffiBind;
+  late CntdeskImpl _ffiBind;
   late String _appType;
   StreamEventHandler? _eventCallback;
 
@@ -58,9 +58,9 @@ class PlatformFFI {
   static final PlatformFFI instance = PlatformFFI._();
   final _toAndroidChannel = const MethodChannel('mChannel');
 
-  Cntdesk get ffiBind => _ffiBind;
+  CntdeskImpl get ffiBind => _ffiBind;
   @visibleForTesting
-  void setBindingForTesting(Cntdesk binding) => _ffiBind = binding;
+  void setBindingForTesting(CntdeskImpl binding) => _ffiBind = binding;
 
   F3? _session_get_rgba;
 
@@ -159,7 +159,7 @@ class PlatformFFI {
       } catch (e) {
         debugPrint('Failed to get documents directory: $e');
       }
-      _ffiBind = Cntdesk(dylib);
+      _ffiBind = CntdeskImpl(dylib);
 
       if (isLinux) {
         if (isMain) {
@@ -261,7 +261,7 @@ class PlatformFFI {
   }
 
   /// Start listening to the Rust core's events and frames.
-  void _startListenEvent(Cntdesk rustdeskImpl) {
+  void _startListenEvent(CntdeskImpl rustdeskImpl) {
     final appType =
         _appType == kAppTypeDesktopRemote ? '$_appType,$kWindowId' : _appType;
     var sink = rustdeskImpl.startGlobalEventStream(appType: appType);

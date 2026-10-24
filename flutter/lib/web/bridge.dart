@@ -92,7 +92,7 @@ class CursorShape {
   });
 }
 
-class Cntdesk {
+class CntdeskImpl {
   // The core answers through the callback, before callMethod returns.
   Future<CursorShape?> sessionGetCursorShape(
       {required UuidValue sessionId, required String id, dynamic hint}) {
