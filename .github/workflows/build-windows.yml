@@ -69,6 +69,12 @@ jobs:
           VCPKG_ROOT: C:\vcpkg
         run: cargo build --locked --features hwcodec,flutter --lib --release
 
+      - name: Copy libcntdesk.dll as librustdesk.dll for CMake
+        run: |
+          if (Test-Path "target/release/libcntdesk.dll") {
+            Copy-Item "target/release/libcntdesk.dll" "target/release/librustdesk.dll" -Force
+          }
+
       - name: Build Flutter Windows app
         run: |
           cd flutter
