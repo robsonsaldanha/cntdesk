@@ -9,6 +9,9 @@ env:
   CARGO_TERM_COLOR: always
   VCPKG_ROOT: C:\vcpkg
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-2022
