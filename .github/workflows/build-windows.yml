@@ -64,18 +64,20 @@ jobs:
           cargo install flutter_rust_bridge_codegen --version 1.80.1 --locked
           flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart
 
-      - name: Build using RustDesk build.py
+      - name: Build Rust library
         env:
           VCPKG_ROOT: C:\vcpkg
+        run: cargo build --locked --features hwcodec,flutter --lib --release
+
+      - name: Build Flutter Windows app
         run: |
-          python build.py --flutter --hwcodec
+          cd flutter
+          flutter build windows --release --verbose
 
       - name: Package installer
         run: |
-          $exe = "target/release/cntdesk.exe"
           $flutter_build = "flutter/build/windows/x64/runner/Release"
           New-Item -ItemType Directory -Force -Path "dist"
-          Copy-Item $exe "dist/"
           if (Test-Path $flutter_build) {
             Copy-Item "$flutter_build/*" "dist/" -Recurse
           }
