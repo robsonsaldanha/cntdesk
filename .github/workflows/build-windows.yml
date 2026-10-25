@@ -77,6 +77,9 @@ jobs:
           cd flutter
           flutter build windows --release --verbose
 
+      - name: Download VC++ Redistributable
+        run: |
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "vc_redist.x64.exe"
       - name: Package installer
         run: |
           $flutter_build = "flutter/build/windows/x64/runner/Release"
@@ -84,6 +87,7 @@ jobs:
           if (Test-Path $flutter_build) {
             Copy-Item "$flutter_build/*" "dist/" -Recurse
           }
+          Copy-Item "vc_redist.x64.exe" "dist/" -Force
           Compress-Archive -Path "dist/*" -DestinationPath "CNT.Desk_${{ github.run_number }}_windows.zip"
 
       - name: Upload artifact
